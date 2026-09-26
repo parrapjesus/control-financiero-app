@@ -1,0 +1,22 @@
+{
+  "name": "control-financiero-pro",
+  "version": "2.0.0",
+  "description": "Aplicación moderna de Control Financiero Personal con Vercel, Supabase y Gemini AI",
+  "main": "api/gemini.js",
+  "scripts": {
+    "dev": "vercel dev",
+    "deploy": "vercel --prod"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.48.1"
+  },
+  "keywords": [
+    "finanzas",
+    "supabase",
+    "vercel",
+    "gemini",
+    "pwa"
+  ],
+  "author": "",
+  "license": "MIT"
+}

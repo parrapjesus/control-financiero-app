@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="es" class="h-full bg-slate-950">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Control Financiero Pro</title>
+
+  <!-- PWA & Mobile Icons -->
+  <link rel="icon" type="image/png" href="https://img.icons8.com/color/512/wallet--v1.png">
+  <link rel="apple-touch-icon" href="https://img.icons8.com/color/512/wallet--v1.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#020617">
+  <link rel="manifest" href="/manifest.json">
+
+  <!-- Tailwind CSS & FontAwesome -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- Chart.js & Supabase JS SDK -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Plus Jakarta Sans', 'sans-serif'] },
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca'
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    body { font-family: 'Plus Jakarta Sans', sans-serif; }
+    .glass-panel {
+      background: rgba(15, 23, 42, 0.75);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.07);
+    }
+    .active-nav {
+      background: #4f46e5 !important;
+      color: #ffffff !important;
+      font-weight: 600;
+      box-shadow: 0 4px 15px rgba(79, 70, 229, 0.35);
+    }
+    .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 999px; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col pb-24 md:pb-6">
+
+  <!-- ================= TOP HEADER ================= -->
+  <header class="sticky top-0 z-40 glass-panel border-b border-slate-800/80 px-4 py-3.5">
+    <div class="max-w-5xl mx-auto flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center text-white shadow-lg shadow-indigo-500/20">
+          <i class="fa-solid fa-wallet text-lg"></i>
+        </div>
+        <div>
+          <h1 class="text-base font-bold text-white tracking-tight leading-tight">Control Financiero <span class="text-indigo-400">Pro</span></h1>
+          <div class="flex items-center gap-1.5 text-xs text-slate-400">
+            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span>En línea</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Header Quick Actions -->
+      <div class="flex items-center gap-2">
+        <button onclick="document.getElementById('modal-add-ingreso').classList.remove('hidden')" class="px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition">
+          <i class="fa-solid fa-plus"></i> <span class="hidden sm:inline">Ingreso</span>
+        </button>
+        <button onclick="document.getElementById('modal-add-gasto').classList.remove('hidden')" class="px-3 py-1.5 bg-rose-600/20 hover:bg-rose-600/30 text-rose-400 border border-rose-500/30 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition">
+          <i class="fa-solid fa-minus"></i> <span class="hidden sm:inline">Gasto</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ================= MAIN CONTENT VIEWS ================= -->
+  <main class="flex-1 max-w-5xl w-full mx-auto p-4 md:p-6 space-y-6">
+
+    <!-- 1. DASHBOARD VIEW -->
+    <section id="tab-dashboard" class="tab-content space-y-6">
+      <!-- Balance Card -->
+      <div class="relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-900/60 via-slate-900/80 to-slate-900 border border-indigo-500/20 p-6 shadow-2xl">
+        <div class="absolute -top-12 -right-12 w-48 h-48 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
+        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div>
+            <span class="text-xs font-medium text-indigo-300 uppercase tracking-wider flex items-center gap-1.5">
+              <i class="fa-solid fa-shield-halved"></i> Saldo Real Disponible
+            </span>
+            <div id="metric-saldo-real" class="text-3xl sm:text-4xl font-extrabold text-white mt-1.5 tracking-tight">$0</div>
+            <p class="text-xs text-slate-400 mt-1">Saldo en mano descontando gastos pagados de este mes</p>
+          </div>
+          <div class="bg-slate-800/80 border border-slate-700/60 rounded-2xl p-3.5 text-right w-full sm:w-auto">
+            <span class="text-xs text-slate-400">Saldo Proyectado Fin de Mes</span>
+            <div id="metric-saldo-proyectado" class="text-lg font-bold text-indigo-400">$0</div>
+          </div>
+        </div>
+
+        <!-- Metric Grid -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6 pt-6 border-t border-slate-800/80">
+          <div class="p-3 bg-slate-800/40 rounded-xl border border-slate-700/30">
+            <span class="text-xs text-slate-400 block"><i class="fa-solid fa-arrow-trend-up text-emerald-400 mr-1"></i> Ingresos</span>
+            <span id="metric-ingresos" class="text-sm sm:text-base font-bold text-emerald-400 mt-0.5 block">$0</span>
+          </div>
+          <div class="p-3 bg-slate-800/40 rounded-xl border border-slate-700/30">
+            <span class="text-xs text-slate-400 block"><i class="fa-solid fa-bag-shopping text-rose-400 mr-1"></i> Diarios</span>
+            <span id="metric-gastos-diarios" class="text-sm sm:text-base font-bold text-rose-400 mt-0.5 block">$0</span>
+          </div>
+          <div class="p-3 bg-slate-800/40 rounded-xl border border-slate-700/30">
+            <span class="text-xs text-slate-400 block"><i class="fa-solid fa-calendar text-indigo-400 mr-1"></i> Total Fijos</span>
+            <span id="metric-servicios-fijos" class="text-sm sm:text-base font-bold text-white mt-0.5 block">$0</span>
+          </div>
+          <div class="p-3 bg-slate-800/40 rounded-xl border border-slate-700/30">
+            <span class="text-xs text-slate-400 block"><i class="fa-solid fa-hourglass-half text-amber-400 mr-1"></i> Pendientes</span>
+            <span id="metric-servicios-pendientes" class="text-sm sm:text-base font-bold text-amber-400 mt-0.5 block">$0</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Chart & Quick Summary -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div class="glass-panel rounded-3xl p-6">
+          <h3 class="text-sm font-bold text-white mb-4 flex items-center gap-2">
+            <i class="fa-solid fa-chart-pie text-indigo-400"></i> Distribución de Gastos
+          </h3>
+          <div class="h-64 relative">
+            <canvas id="financeChart"></canvas>
+          </div>
+        </div>
+
+        <!-- Voice / AI Quick Prompt -->
+        <div class="glass-panel rounded-3xl p-6 flex flex-col justify-between">
+          <div>
+            <h3 class="text-sm font-bold text-white mb-2 flex items-center gap-2">
+              <i class="fa-solid fa-wand-magic-sparkles text-indigo-400"></i> Asistente de Voz / IA
+            </h3>
+            <p class="text-xs text-slate-400 mb-4">
+              Dicta o escribe tus transacciones en lenguaje coloquial. Ej: <i>"Gasté 5000 en verdulería con MP"</i> o <i>"Pagué el internet y me quedaron 80.000 pesos"</i>.
+            </p>
+          </div>
+          <div class="space-y-3">
+            <button onclick="UI.switchTab('ai')" class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 rounded-2xl text-sm font-bold text-white flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/30 transition">
+              <i class="fa-solid fa-microphone"></i> Abrir Asistente Inteligente
+            </button>
+            <button onclick="document.getElementById('modal-reconciliar').classList.remove('hidden')" class="w-full py-2.5 bg-slate-800 hover:bg-slate-700 rounded-2xl text-xs font-semibold text-slate-300 border border-slate-700 transition flex items-center justify-center gap-2">
+              <i class="fa-solid fa-sliders"></i> Ajustar / Reconciliar Saldo
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. AI ASSISTANT VIEW -->
+    <section id="tab-ai" class="tab-content hidden space-y-4">
+      <div class="glass-panel rounded-3xl p-4 sm:p-6 flex flex-col h-[70vh]">
+        <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+          <div class="flex items-center gap-2.5">
+            <div class="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center text-white">
+              <i class="fa-solid fa-robot"></i>
+            </div>
+            <div>
+              <h3 class="text-sm font-bold text-white">Asistente Gemini 2.0 Flash</h3>
+              <p class="text-xs text-slate-400">Procesamiento de voz y finanzas en tiempo real</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Chat messages container -->
+        <div id="chat-messages" class="flex-1 overflow-y-auto custom-scrollbar py-4 space-y-3">
+          <div class="flex gap-3 justify-start">
+            <div class="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-white shrink-0 text-xs">
+              <i class="fa-solid fa-wand-magic-sparkles"></i>
+            </div>
+            <div class="max-w-[85%] md:max-w-[70%] p-3.5 rounded-2xl text-sm bg-slate-800 text-slate-200 border border-slate-700 rounded-bl-none">
+              ¡Hola! Estoy listo para ayudarte. Puedes decirme qué compraste, qué servicios pagaste o decirme cuánto dinero te quedó en mano para reconciliar tus cuentas.
+            </div>
+          </div>
+        </div>
+
+        <!-- Loading Indicator -->
+        <div id="ai-loading-indicator" class="hidden flex items-center gap-2 text-xs text-indigo-400 py-2">
+          <i class="fa-solid fa-circle-notch fa-spin"></i>
+          <span>Gemini está analizando tus cuentas...</span>
+        </div>
+
+        <!-- Chat Input Form -->
+        <form id="ai-chat-form" class="flex items-center gap-2 pt-3 border-t border-slate-800">
+          <button type="button" id="btn-voice-mic" onclick="AIAssistant.toggleVoice()" class="w-12 h-12 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 flex items-center justify-center transition shrink-0">
+            <i class="fa-solid fa-microphone text-lg"></i>
+          </button>
+          <input type="text" id="ai-input-text" placeholder="Ej: Gasté 15000 en el súper con Débito..." class="flex-1 bg-slate-900/90 border border-slate-700 rounded-2xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
+          <button type="submit" class="w-12 h-12 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white flex items-center justify-center shrink-0 shadow-md shadow-indigo-600/30 transition">
+            <i class="fa-solid fa-paper-plane"></i>
+          </button>
+        </form>
+      </div>
+    </section>
+
+    <!-- 3. GASTOS DIARIOS VIEW -->
+    <section id="tab-diarios" class="tab-content hidden space-y-4">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-lg font-bold text-white">Gastos Diarios</h2>
+          <p class="text-xs text-slate-400">Consumos diarios, supermercado, salidas y compras varias</p>
+        </div>
+        <button onclick="document.getElementById('modal-add-gasto').classList.remove('hidden')" class="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-semibold flex items-center gap-2 transition shadow-lg shadow-rose-600/30">
+          <i class="fa-solid fa-plus"></i> Registrar Gasto
+        </button>
+      </div>
+
+      <div class="glass-panel rounded-3xl p-4 md:p-6">
+        <div id="list-diarios" class="space-y-2.5">
+          <!-- Inyectado por JS -->
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. GASTOS FIJOS / SERVICIOS VIEW -->
+    <section id="tab-servicios" class="tab-content hidden space-y-4">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-lg font-bold text-white">Servicios y Gastos Fijos</h2>
+          <p class="text-xs text-slate-400">Control de vencimientos mensuales y comprobantes</p>
+        </div>
+        <button onclick="document.getElementById('modal-add-servicio').classList.remove('hidden')" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold flex items-center gap-2 transition shadow-lg shadow-indigo-600/30">
+          <i class="fa-solid fa-plus"></i> Nuevo Servicio
+        </button>
+      </div>
+
+      <div class="glass-panel rounded-3xl p-4 md:p-6">
+        <div id="list-servicios" class="space-y-3">
+          <!-- Inyectado por JS -->
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. TARJETAS Y PRÉSTAMOS VIEW -->
+    <section id="tab-deudas" class="tab-content hidden space-y-6">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-lg font-bold text-white">Tarjetas & Préstamos</h2>
+          <p class="text-xs text-slate-400">Seguimiento de compras en cuotas y créditos</p>
+        </div>
+        <button onclick="document.getElementById('modal-add-deuda').classList.remove('hidden')" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold flex items-center gap-2 transition shadow-lg shadow-indigo-600/30">
+          <i class="fa-solid fa-plus"></i> Registrar Deuda
+        </button>
+      </div>
+
+      <!-- Tarjetas -->
+      <div class="glass-panel rounded-3xl p-4 md:p-6 space-y-4">
+        <h3 class="text-sm font-bold text-white flex items-center gap-2">
+          <i class="fa-solid fa-credit-card text-indigo-400"></i> Compras en Tarjeta de Crédito
+        </h3>
+        <div id="list-tarjetas" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <!-- Inyectado por JS -->
+        </div>
+      </div>
+
+      <!-- Préstamos -->
+      <div class="glass-panel rounded-3xl p-4 md:p-6 space-y-4">
+        <h3 class="text-sm font-bold text-white flex items-center gap-2">
+          <i class="fa-solid fa-hand-holding-dollar text-violet-400"></i> Préstamos y Créditos
+        </h3>
+        <div id="list-prestamos" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <!-- Inyectado por JS -->
+        </div>
+      </div>
+    </section>
+
+    <!-- 6. HISTORIAL VIEW -->
+    <section id="tab-historial" class="tab-content hidden space-y-4">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-lg font-bold text-white">Historial de Movimientos</h2>
+          <p class="text-xs text-slate-400">Registro cronológico de todas las operaciones</p>
+        </div>
+      </div>
+
+      <div class="glass-panel rounded-3xl p-4 md:p-6">
+        <div id="list-historial" class="space-y-2.5">
+          <!-- Inyectado por JS -->
+        </div>
+      </div>
+    </section>
+
+    <!-- 7. AJUSTES / CONFIGURACIÓN VIEW -->
+    <section id="tab-ajustes" class="tab-content hidden space-y-6">
+      <div>
+        <h2 class="text-lg font-bold text-white">Configuración y Conexiones</h2>
+        <p class="text-xs text-slate-400">Conecta tu base de datos Supabase y tu API de Gemini</p>
+      </div>
+
+      <!-- Supabase Connection Card -->
+      <div class="glass-panel rounded-3xl p-6 space-y-4">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center font-bold">
+            <i class="fa-solid fa-database"></i>
+          </div>
+          <div>
+            <h3 class="text-sm font-bold text-white">Conexión a Supabase (PostgreSQL)</h3>
+            <p class="text-xs text-slate-400">Tus datos se almacenarán en tu propia base de datos en la nube</p>
+          </div>
+        </div>
+
+        <div class="space-y-3 pt-2">
+          <div>
+            <label class="text-xs font-semibold text-slate-300 block mb-1">Project URL de Supabase</label>
+            <input type="text" id="setting-supabase-url" placeholder="https://tu-proyecto.supabase.co" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
+          </div>
+          <div>
+            <label class="text-xs font-semibold text-slate-300 block mb-1">Anon / Public API Key</label>
+            <input type="password" id="setting-supabase-key" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6..." class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
+          </div>
+          <button onclick="saveSupabaseSettings()" class="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-semibold transition">
+            Guardar y Conectar con Supabase
+          </button>
+        </div>
+      </div>
+
+      <!-- Gemini AI API Key Card -->
+      <div class="glass-panel rounded-3xl p-6 space-y-4">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center font-bold">
+            <i class="fa-solid fa-wand-magic-sparkles"></i>
+          </div>
+          <div>
+            <h3 class="text-sm font-bold text-white">Google Gemini AI Key</h3>
+            <p class="text-xs text-slate-400">Opcional si ya la agregaste en las variables de entorno de Vercel</p>
+          </div>
+        </div>
+
+        <div class="space-y-3 pt-2">
+          <div>
+            <input type="password" id="setting-gemini-key" placeholder="AIzaSy..." class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
+          </div>
+          <button onclick="saveGeminiSettings()" class="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold transition">
+            Guardar Clave Gemini
+          </button>
+        </div>
+      </div>
+
+      <!-- Métodos de Pago Gestión -->
+      <div class="glass-panel rounded-3xl p-6 space-y-4">
+        <h3 class="text-sm font-bold text-white flex items-center gap-2">
+          <i class="fa-solid fa-wallet text-indigo-400"></i> Métodos de Pago y Cuentas Bancarias
+        </h3>
+        <div class="flex gap-2">
+          <input type="text" id="new-metodo-name" placeholder="Ej: Banco Galicia, Dólares..." class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
+          <button onclick="handleAddMetodo()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold transition">
+            Añadir
+          </button>
+        </div>
+        <div id="list-metodos-gestion" class="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2">
+          <!-- Inyectado por JS -->
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ================= BOTTOM NAVIGATION BAR ================= -->
+  <nav class="fixed bottom-0 left-0 right-0 z-40 glass-panel border-t border-slate-800 px-3 py-2">
+    <div class="max-w-md mx-auto flex items-center justify-around">
+      <button data-tab="dashboard" class="nav-btn active-nav flex flex-col items-center gap-1 px-3 py-1.5 rounded-xl text-slate-400 text-[11px] transition">
+        <i class="fa-solid fa-house text-base"></i>
+        <span>Inicio</span>
+      </button>
+      <button data-tab="ai" class="nav-btn flex flex-col items-center gap-1 px-3 py-1.5 rounded-xl text-slate-400 text-[11px] transition">
+        <i class="fa-solid fa-wand-magic-sparkles text-base"></i>
+        <span>IA Asistente</span>
+      </button>
+      <button data-tab="diarios" class="nav-btn flex flex-col items-center gap-1 px-3 py-1.5 rounded-xl text-slate-400 text-[11px] transition">
+        <i class="fa-solid fa-cart-shopping text-base"></i>
+        <span>Diarios</span>
+      </button>
+      <button data-tab="servicios" class="nav-btn flex flex-col items-center gap-1 px-3 py-1.5 rounded-xl text-slate-400 text-[11px] transition">
+        <i class="fa-solid fa-calendar-check text-base"></i>
+        <span>Servicios</span>
+      </button>
+      <button data-tab="deudas" class="nav-btn flex flex-col items-center gap-1 px-3 py-1.5 rounded-xl text-slate-400 text-[11px] transition">
+        <i class="fa-solid fa-credit-card text-base"></i>
+        <span>Deudas</span>
+      </button>
+      <button data-tab="ajustes" class="nav-btn flex flex-col items-center gap-1 px-3 py-1.5 rounded-xl text-slate-400 text-[11px] transition">
+        <i class="fa-solid fa-gear text-base"></i>
+        <span>Ajustes</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- ================= MODALS ================= -->
+
+  <!-- Modal Ingreso -->
+  <div id="modal-add-ingreso" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+      <div class="flex justify-between items-center">
+        <h3 class="text-base font-bold text-white flex items-center gap-2">
+          <i class="fa-solid fa-arrow-down text-emerald-400"></i> Registrar Ingreso
+        </h3>
+        <button onclick="document.getElementById('modal-add-ingreso').classList.add('hidden')" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <form onsubmit="event.preventDefault(); submitIngreso();" class="space-y-3">
+        <div>
+          <label class="text-xs text-slate-400 block mb-1">Descripción</label>
+          <input type="text" id="in-ingreso-desc" required placeholder="Ej: Sueldo, Venta, Freelance" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
+        </div>
+        <div>
+          <label class="text-xs text-slate-400 block mb-1">Monto ($)</label>
+          <input type="number" step="any" id="in-ingreso-monto" required placeholder="0.00" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
+        </div>
+        <div>
+          <label class="text-xs text-slate-400 block mb-1">Método / Cuenta</label>
+          <select id="in-ingreso-metodo" class="select-metodos-pago w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white"></select>
+        </div>
+        <div class="flex gap-2 pt-2">
+          <button type="button" onclick="document.getElementById('modal-add-ingreso').classList.add('hidden')" class="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 rounded-xl text-xs font-semibold text-slate-300">Cancelar</button>
+          <button type="submit" class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-xl text-xs font-semibold text-white">Guardar Ingreso</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal Gasto Diario -->
+  <div id="modal-add-gasto" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+      <div class="flex justify-between items-center">
+        <h3 class="text-base font-bold text-white flex items-center gap-2">
+          <i class="fa-solid fa-cart-shopping text-rose-400"></i> Registrar Gasto Diario
+        </h3>
+        <button onclick="document.getElementById('modal-add-gasto').classList.add('hidden')" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <form onsubmit="event.preventDefault(); submitGastoDiario();" class="space-y-3">
+        <div>
+          <label class="text-xs text-slate-400 block mb-1">Descripción</label>
+          <input type="text" id="in-gasto-desc" required placeholder="Ej: Supermercado, Farmacia, Combustible" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
+        </div>
+        <div>
+          <label class="text-xs text-slate-400 block mb-1">Monto ($)</label>
+          <input type="number" step="any" id="in-gasto-monto" required placeholder="0.00" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
+        </div>
+        <div>
+          <label class="text-xs text-slate-400 block mb-1">Método de Pago</label>
+          <select id="in-gasto-metodo" class="select-metodos-pago w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white"></select>
+        </div>
+        <div class="flex gap-2 pt-2">
+          <button type="button" onclick="document.getElementById('modal-add-gasto').classList.add('hidden')" class="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 rounded-xl text-xs font-semibold text-slate-300">Cancelar</button>
+          <button type="submit" class="flex-1 py-2.5 bg-rose-600 hover:bg-rose-500 rounded-xl text-xs font-semibold text-white">Guardar Gasto</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal Servicio Fijo -->
+  <div id="modal-add-servicio" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+      <div class="flex justify-between items-center">
+        <h3 class="text-base font-bold text-white flex items-center gap-2">
+          <i class="fa-solid fa-calendar-check text-indigo-400"></i> Nuevo Servicio Fijo
+        </h3>
+        <button onclick="document.getElementById('modal-add-servicio').classList.add('hidden')" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <form onsubmit="event.preventDefault(); submitServicio();" class="space-y-3">
+        <div>
+          <label class="text-xs text-slate-400 block mb-1">Nombre del Servicio / Gasto Fijo</label>
+          <input type="text" id="in-servicio-nombre" required placeholder="Ej: Internet, Luz, Alquiler, Gimnasio" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="text-xs text-slate-400 block mb-1">Monto ($)</label>
+            <input type="number" step="any" id="in-servicio-monto" required placeholder="0.00" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
+          </div>
+          <div>
+            <label class="text-xs text-slate-400 block mb-1">Día de Vencimiento</label>
+            <input type="number" min="1" max="31" id="in-servicio-venc" required placeholder="1 al 31" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
+          </div>
+        </div>
+        <div class="flex gap-2 pt-2">
+          <button type="button" onclick="document.getElementById('modal-add-servicio').classList.add('hidden')" class="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 rounded-xl text-xs font-semibold text-slate-300">Cancelar</button>
+          <button type="submit" class="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-xs font-semibold text-white">Guardar Servicio</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal Deuda / Tarjeta -->
+  <div id="modal-add-deuda" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+      <div class="flex justify-between items-center">
+        <h3 class="text-base font-bold text-white flex items-center gap-2">
+          <i class="fa-solid fa-credit-card text-indigo-400"></i> Registrar Tarjeta o Préstamo
+        </h3>
+        <button onclick="document.getElementById('modal-add-deuda').classList.add('hidden')" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <form onsubmit="event.preventDefault(); submitDeuda();" class="space-y-3">
+        <div>
+          <label class="text-xs text-slate-400 block mb-1">Tipo de Obligación</label>
+          <select id="in-deuda-tipo" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
+            <option value="tarjeta">Compra con Tarjeta de Crédito</option>
+            <option value="prestamo">Préstamo / Crédito Bancario</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-xs text-slate-400 block mb-1">Descripción / Concepto</label>
+          <input type="text" id="in-deuda-nombre" required placeholder="Ej: Notebook, Préstamo Personal" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="text-xs text-slate-400 block mb-1">Monto Total ($)</label>
+            <input type="number" step="any" id="in-deuda-total" required placeholder="0.00" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
+          </div>
+          <div>
+            <label class="text-xs text-slate-400 block mb-1">Cantidad de Cuotas</label>
+            <input type="number" min="1" id="in-deuda-cuotas" required placeholder="1" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
+          </div>
+        </div>
+        <div>
+          <label class="text-xs text-slate-400 block mb-1">Método / Tarjeta</label>
+          <select id="in-deuda-metodo" class="select-metodos-pago w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white"></select>
+        </div>
+        <div class="flex gap-2 pt-2">
+          <button type="button" onclick="document.getElementById('modal-add-deuda').classList.add('hidden')" class="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 rounded-xl text-xs font-semibold text-slate-300">Cancelar</button>
+          <button type="submit" class="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-xs font-semibold text-white">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal Reconciliar Saldo -->
+  <div id="modal-reconciliar" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+      <div class="flex justify-between items-center">
+        <h3 class="text-base font-bold text-white flex items-center gap-2">
+          <i class="fa-solid fa-sliders text-indigo-400"></i> Reconciliar Saldo Real
+        </h3>
+        <button onclick="document.getElementById('modal-reconciliar').classList.add('hidden')" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <form onsubmit="event.preventDefault(); submitReconciliar();" class="space-y-3">
+        <p class="text-xs text-slate-400">Ingresa cuánto dinero exacto tienes en tu cuenta para que el sistema ajuste tus gastos e ingresos automáticamente.</p>
+        <div>
+          <label class="text-xs text-slate-400 block mb-1">Saldo Real en Mano ($)</label>
+          <input type="number" step="any" id="in-reconciliar-saldo" required placeholder="0.00" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
+        </div>
+        <div class="flex items-center gap-2 pt-1">
+          <input type="checkbox" id="in-reconciliar-servicios" class="w-4 h-4 rounded bg-slate-900 text-indigo-600 border-slate-700">
+          <label for="in-reconciliar-servicios" class="text-xs text-slate-300">Marcar todos los servicios como pagados</label>
+        </div>
+        <div class="flex gap-2 pt-2">
+          <button type="button" onclick="document.getElementById('modal-reconciliar').classList.add('hidden')" class="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 rounded-xl text-xs font-semibold text-slate-300">Cancelar</button>
+          <button type="submit" class="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-xs font-semibold text-white">Reconciliar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div id="toast-notification" class="fixed bottom-20 left-1/2 -translate-x-1/2 px-5 py-2.5 rounded-full text-xs font-semibold text-white shadow-xl opacity-0 pointer-events-none transition-all duration-300 z-50"></div>
+
+  <!-- App Scripts -->
+  <script src="/js/supabase-config.js"></script>
+  <script src="/js/app.js"></script>
+  <script>
+    function submitIngreso() {
+      const desc = document.getElementById('in-ingreso-desc').value;
+      const monto = document.getElementById('in-ingreso-monto').value;
+      const metodo = document.getElementById('in-ingreso-metodo').value;
+      DataService.addIngreso(desc, monto, metodo);
+      document.getElementById('modal-add-ingreso').classList.add('hidden');
+      document.getElementById('in-ingreso-desc').value = '';
+      document.getElementById('in-ingreso-monto').value = '';
+    }
+
+    function submitGastoDiario() {
+      const desc = document.getElementById('in-gasto-desc').value;
+      const monto = document.getElementById('in-gasto-monto').value;
+      const metodo = document.getElementById('in-gasto-metodo').value;
+      DataService.addGastoDiario(desc, monto, metodo);
+      document.getElementById('modal-add-gasto').classList.add('hidden');
+      document.getElementById('in-gasto-desc').value = '';
+      document.getElementById('in-gasto-monto').value = '';
+    }
+
+    function submitServicio() {
+      const nombre = document.getElementById('in-servicio-nombre').value;
+      const monto = document.getElementById('in-servicio-monto').value;
+      const venc = document.getElementById('in-servicio-venc').value;
+      DataService.addServicio(nombre, monto, venc);
+      document.getElementById('modal-add-servicio').classList.add('hidden');
+      document.getElementById('in-servicio-nombre').value = '';
+      document.getElementById('in-servicio-monto').value = '';
+      document.getElementById('in-servicio-venc').value = '';
+    }
+
+    function submitDeuda() {
+      const tipo = document.getElementById('in-deuda-tipo').value;
+      const nombre = document.getElementById('in-deuda-nombre').value;
+      const total = document.getElementById('in-deuda-total').value;
+      const cuotas = document.getElementById('in-deuda-cuotas').value;
+      const metodo = document.getElementById('in-deuda-metodo').value;
+      DataService.addDeuda(tipo, nombre, total, cuotas, metodo);
+      document.getElementById('modal-add-deuda').classList.add('hidden');
+      document.getElementById('in-deuda-nombre').value = '';
+      document.getElementById('in-deuda-total').value = '';
+      document.getElementById('in-deuda-cuotas').value = '';
+    }
+
+    function submitReconciliar() {
+      const saldo = document.getElementById('in-reconciliar-saldo').value;
+      const marcarServ = document.getElementById('in-reconciliar-servicios').checked;
+      DataService.reconciliarSaldo(saldo, marcarServ, [], 'General');
+      document.getElementById('modal-reconciliar').classList.add('hidden');
+      document.getElementById('in-reconciliar-saldo').value = '';
+    }
+
+    function handleAddMetodo() {
+      const input = document.getElementById('new-metodo-name');
+      if (input && input.value.trim()) {
+        DataService.addMetodo(input.value.trim());
+        input.value = '';
+      }
+    }
+
+    function saveSupabaseSettings() {
+      const url = document.getElementById('setting-supabase-url').value;
+      const key = document.getElementById('setting-supabase-key').value;
+      SupabaseConfig.saveCredentials(url, key);
+      DataService.loadAllData();
+      UI.showNotification('Credenciales de Supabase guardadas', 'success');
+    }
+
+    function saveGeminiSettings() {
+      const key = document.getElementById('setting-gemini-key').value;
+      if (key) {
+        localStorage.setItem('CFP_GEMINI_API_KEY', key.trim());
+        UI.showNotification('Clave de Gemini guardada', 'success');
+      }
+    }
+
+    // Registro de Service Worker para PWA / TWA
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js')
+          .then(reg => console.log('✅ Service Worker PWA registrado:', reg.scope))
+          .catch(err => console.warn('⚠️ Error al registrar Service Worker:', err));
+      });
+    }
+  </script>
+</body>
+</html>
