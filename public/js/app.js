@@ -336,6 +336,32 @@ const DataService = {
     UI.showNotification('Servicio eliminado', 'info');
   },
 
+  async updateServicio(id, { servicio, monto, vencimiento }) {
+    const client = SupabaseConfig.client;
+    const m = parseFloat(monto) || 0;
+    const v = parseInt(vencimiento, 10) || 1;
+
+    if (client && SupabaseConfig.isConfigured()) {
+      await client.from('gastos_fijos').update({
+        servicio,
+        monto: m,
+        vencimiento: v
+      }).eq('id', id);
+    }
+
+    const serv = AppState.data.servicios.find(s => s.id === id);
+    if (serv) {
+      serv.servicio = servicio;
+      serv.monto = m;
+      serv.vencimiento = v;
+    }
+
+    AppState.data.servicios.sort((a, b) => a.vencimiento - b.vencimiento);
+    DataService.saveToLocalStorage();
+    UI.renderAll();
+    UI.showNotification(`Servicio "${servicio}" actualizado`, 'success');
+  },
+
   // Subir comprobante a Supabase Storage
   async uploadVoucher(servicioId, file) {
     const client = SupabaseConfig.client;
@@ -381,10 +407,11 @@ const DataService = {
   // -------------------------------------------------------------
   // DEUDAS (TARJETAS Y PRÉSTAMOS)
   // -------------------------------------------------------------
-  async addDeuda(tipo, nombre, montoTotal, cuotasTotales, metodo) {
-    const total = parseFloat(montoTotal);
-    const cuotas = parseInt(cuotasTotales, 10);
-    const montoCuota = total / (cuotas || 1);
+  async addDeuda(tipo, nombre, montoTotal, cuotasTotales, metodo, cuotasPagadas) {
+    const total = parseFloat(montoTotal) || 0;
+    const cuotas = parseInt(cuotasTotales, 10) || 1;
+    const pagadas = parseInt(cuotasPagadas, 10) || 0;
+    const montoCuota = total / cuotas;
     const client = SupabaseConfig.client;
 
     if (client && SupabaseConfig.isConfigured()) {
@@ -393,9 +420,9 @@ const DataService = {
         nombre,
         monto_total: total,
         cuotas_totales: cuotas,
-        cuotas_pagadas: 0,
+        cuotas_pagadas: pagadas,
         monto_cuota: montoCuota,
-        metodo: metodo || 'Tarjeta de Crédito',
+        metodo: metodo || (tipo === 'tarjeta' ? 'Tarjeta de Crédito' : 'General'),
         fecha_inicio: new Date().toISOString().split('T')[0]
       }]).select();
 
@@ -406,7 +433,7 @@ const DataService = {
           prestamo: data[0].nombre,
           monto_total: total,
           cuotas_totales: cuotas,
-          cuotas_pagadas: 0,
+          cuotas_pagadas: pagadas,
           monto_cuota: montoCuota,
           metodo: data[0].metodo
         };
@@ -420,7 +447,7 @@ const DataService = {
         prestamo: nombre,
         monto_total: total,
         cuotas_totales: cuotas,
-        cuotas_pagadas: 0,
+        cuotas_pagadas: pagadas,
         monto_cuota: montoCuota,
         metodo: metodo || 'General'
       };
@@ -431,6 +458,42 @@ const DataService = {
 
     UI.renderAll();
     UI.showNotification(`${tipo === 'tarjeta' ? 'Tarjeta' : 'Préstamo'} agregado`, 'success');
+  },
+
+  async updateDeuda(id, tipo, { nombre, monto_total, cuotas_totales, cuotas_pagadas, monto_cuota, metodo }) {
+    const total = parseFloat(monto_total) || 0;
+    const cuotasTot = parseInt(cuotas_totales, 10) || 1;
+    const cuotasPag = parseInt(cuotas_pagadas, 10) || 0;
+    const valorCuota = monto_cuota ? parseFloat(monto_cuota) : (total / cuotasTot);
+
+    const client = SupabaseConfig.client;
+    if (client && SupabaseConfig.isConfigured()) {
+      await client.from('deudas').update({
+        nombre,
+        monto_total: total,
+        cuotas_totales: cuotasTot,
+        cuotas_pagadas: cuotasPag,
+        monto_cuota: valorCuota,
+        metodo: metodo || 'General'
+      }).eq('id', id);
+    }
+
+    const lista = tipo === 'tarjeta' ? AppState.data.tarjetas : AppState.data.prestamos;
+    const item = lista.find(d => d.id === id);
+    if (item) {
+      item.compra = nombre;
+      item.prestamo = nombre;
+      item.monto_total = total;
+      item.cuotas_totales = cuotasTot;
+      item.cuotas_pagadas = cuotasPag;
+      item.monto_cuota = valorCuota;
+      item.metodo = metodo || 'General';
+    }
+
+    DataService.saveToLocalStorage();
+    await DataService.logHistorial('Actualización Deuda', `Actualizado ${nombre} (${cuotasPag}/${cuotasTot} cuotas)`, total, metodo || 'General');
+    UI.renderAll();
+    UI.showNotification('Deuda actualizada correctamente', 'success');
   },
 
   async pagarCuotaDeuda(id, tipo) {
@@ -503,11 +566,13 @@ const DataService = {
   },
 
   // -------------------------------------------------------------
-  // RECONCILIACIÓN INTELIGENTE DE SALDO
+  // RECONCILIACIÓN INTELIGENTE DE SALDO / AJUSTE DE CAPITAL
   // -------------------------------------------------------------
-  async reconciliarSaldo(saldoObjetivo, marcarServicios, listaExcluidos, metodo) {
+  async reconciliarSaldo(saldoObjetivo, marcarServicios, listaExcluidos, metodo, motivo) {
     const objetivo = parseFloat(saldoObjetivo);
+    if (isNaN(objetivo)) return;
     const metodoFinal = metodo || 'General';
+    const motivoFinal = motivo || 'Ajuste de Capital (Reconciliación)';
 
     // 1. Marcar servicios como pagados si se solicitó
     if (marcarServicios) {
@@ -525,17 +590,17 @@ const DataService = {
     const metrics = Calculations.getMetrics();
     const diferencia = objetivo - metrics.saldoReal;
 
-    if (Math.abs(diferencia) >= 1) {
+    if (Math.abs(diferencia) >= 0.01) {
       if (diferencia > 0) {
-        // Falta dinero -> Añadir como ajuste de ingreso
-        await DataService.addIngreso('Ajuste de Saldo / Reconciliación', diferencia, metodoFinal);
+        // Falta dinero registrado -> Añadir como ajuste de ingreso
+        await DataService.addIngreso(motivoFinal, diferencia, metodoFinal);
       } else {
-        // Sobra gasto -> Añadir como gasto diario de ajuste
-        await DataService.addGastoDiario('Ajuste de Saldo / Reconciliación', Math.abs(diferencia), metodoFinal);
+        // Hay menos dinero en mano -> Añadir como gasto diario de ajuste no anotado
+        await DataService.addGastoDiario(motivoFinal, Math.abs(diferencia), metodoFinal);
       }
     }
 
-    UI.showNotification(`Saldo reconciliado a $${Math.round(objetivo).toLocaleString('es-AR')}`, 'success');
+    UI.showNotification(`Capital actualizado a $${Math.round(objetivo).toLocaleString('es-AR')}`, 'success');
     UI.renderAll();
   }
 };
@@ -937,12 +1002,15 @@ const UI = {
           </div>
           <div class="flex items-center justify-between md:justify-end gap-3">
             <span class="text-base font-bold ${isPaid ? 'text-slate-400' : 'text-white'}">${UI.formatCurrency(s.monto)}</span>
-            <div class="flex items-center gap-2">
-              <label class="cursor-pointer text-slate-400 hover:text-indigo-400 p-2" title="Subir comprobante">
+            <div class="flex items-center gap-1.5">
+              <button onclick="abrirModalEditarServicio('${s.id}')" class="text-slate-400 hover:text-indigo-400 p-2 rounded-lg hover:bg-slate-700/50 transition" title="Editar servicio">
+                <i class="fa-solid fa-pen-to-square"></i>
+              </button>
+              <label class="cursor-pointer text-slate-400 hover:text-indigo-400 p-2 rounded-lg hover:bg-slate-700/50 transition" title="Subir comprobante">
                 <i class="fa-solid fa-cloud-arrow-up"></i>
                 <input type="file" accept="image/*,.pdf" class="hidden" onchange="DataService.uploadVoucher('${s.id}', this.files[0])">
               </label>
-              <button onclick="DataService.deleteServicio('${s.id}')" class="text-slate-500 hover:text-rose-400 p-2 transition">
+              <button onclick="DataService.deleteServicio('${s.id}')" class="text-slate-500 hover:text-rose-400 p-2 rounded-lg hover:bg-slate-700/50 transition" title="Eliminar">
                 <i class="fa-regular fa-trash-can"></i>
               </button>
             </div>
@@ -956,33 +1024,71 @@ const UI = {
     const containerTarjetas = document.getElementById('list-tarjetas');
     const containerPrestamos = document.getElementById('list-prestamos');
 
+    // Totales y resumen de deudas
+    let totalDeudaRestante = 0;
+    let cuotasMesTotal = 0;
+    let activasCount = 0;
+
+    AppState.data.tarjetas.forEach(t => {
+      const restCuotas = Math.max(0, (t.cuotas_totales || 1) - (t.cuotas_pagadas || 0));
+      if (restCuotas > 0) {
+        activasCount++;
+        cuotasMesTotal += (parseFloat(t.monto_cuota) || 0);
+        totalDeudaRestante += restCuotas * (parseFloat(t.monto_cuota) || 0);
+      }
+    });
+
+    AppState.data.prestamos.forEach(p => {
+      const restCuotas = Math.max(0, (p.cuotas_totales || 1) - (p.cuotas_pagadas || 0));
+      if (restCuotas > 0) {
+        activasCount++;
+        cuotasMesTotal += (parseFloat(p.monto_cuota) || 0);
+        totalDeudaRestante += restCuotas * (parseFloat(p.monto_cuota) || 0);
+      }
+    });
+
+    const elTotalDeuda = document.getElementById('metric-total-deuda');
+    const elCuotasMes = document.getElementById('metric-cuotas-mes-deuda');
+    const elActivas = document.getElementById('metric-deudas-activas');
+    if (elTotalDeuda) elTotalDeuda.textContent = UI.formatCurrency(totalDeudaRestante);
+    if (elCuotasMes) elCuotasMes.textContent = UI.formatCurrency(cuotasMesTotal);
+    if (elActivas) elActivas.textContent = activasCount;
+
     if (containerTarjetas) {
       if (AppState.data.tarjetas.length === 0) {
-        containerTarjetas.innerHTML = `<p class="text-sm text-slate-500 py-4 text-center">No hay compras en cuotas activas.</p>`;
+        containerTarjetas.innerHTML = `<p class="text-sm text-slate-500 py-4 text-center col-span-2">No hay compras en cuotas activas.</p>`;
       } else {
         containerTarjetas.innerHTML = AppState.data.tarjetas.map(t => {
-          const pct = Math.min(100, Math.round((t.cuotas_pagadas / (t.cuotas_totales || 1)) * 100));
+          const restCuotas = Math.max(0, (t.cuotas_totales || 1) - (t.cuotas_pagadas || 0));
+          const restMonto = restCuotas * (parseFloat(t.monto_cuota) || 0);
+          const pct = Math.min(100, Math.round(((t.cuotas_pagadas || 0) / (t.cuotas_totales || 1)) * 100));
           return `
-            <div class="p-4 bg-slate-800/60 rounded-xl border border-slate-700/50 space-y-3">
+            <div class="p-4 bg-slate-800/60 rounded-2xl border border-slate-700/50 space-y-3">
               <div class="flex justify-between items-start">
                 <div>
-                  <h4 class="font-semibold text-white text-sm">${t.compra}</h4>
-                  <span class="text-xs text-slate-400">${t.cuotas_pagadas}/${t.cuotas_totales} cuotas pagadas (${pct}%)</span>
+                  <h4 class="font-bold text-white text-sm">${t.compra}</h4>
+                  <span class="text-xs text-slate-400">${t.cuotas_pagadas || 0}/${t.cuotas_totales} cuotas pagadas (${pct}%)</span>
                 </div>
-                <span class="text-sm font-bold text-indigo-400">${UI.formatCurrency(t.monto_cuota)} / mes</span>
+                <div class="text-right">
+                  <span class="text-sm font-extrabold text-indigo-400 block">${UI.formatCurrency(t.monto_cuota)} / mes</span>
+                  <span class="text-[11px] text-slate-400">Resta: ${UI.formatCurrency(restMonto)}</span>
+                </div>
               </div>
               <div class="w-full bg-slate-700 h-2 rounded-full overflow-hidden">
                 <div class="bg-indigo-500 h-full rounded-full transition-all duration-500" style="width: ${pct}%"></div>
               </div>
               <div class="flex justify-between items-center pt-1">
                 <span class="text-xs text-slate-400">Total: ${UI.formatCurrency(t.monto_total)}</span>
-                <div class="flex items-center gap-2">
-                  ${t.cuotas_pagadas < t.cuotas_totales ? `
-                    <button onclick="DataService.pagarCuotaDeuda('${t.id}', 'tarjeta')" class="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold rounded-lg text-white transition">
+                <div class="flex items-center gap-1.5">
+                  ${(t.cuotas_pagadas || 0) < t.cuotas_totales ? `
+                    <button onclick="DataService.pagarCuotaDeuda('${t.id}', 'tarjeta')" class="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold rounded-lg text-white transition active:scale-95">
                       Pagar Cuota
                     </button>
-                  ` : `<span class="text-xs text-emerald-400 font-semibold">Completado</span>`}
-                  <button onclick="DataService.deleteDeuda('${t.id}', 'tarjeta')" class="text-slate-500 hover:text-rose-400 p-1.5 transition">
+                  ` : `<span class="text-xs text-emerald-400 font-semibold px-2">Completado</span>`}
+                  <button onclick="abrirModalEditarDeuda('${t.id}', 'tarjeta')" class="text-slate-400 hover:text-indigo-300 p-1.5 rounded-lg hover:bg-slate-700/50 transition" title="Editar deuda">
+                    <i class="fa-solid fa-pen-to-square"></i>
+                  </button>
+                  <button onclick="DataService.deleteDeuda('${t.id}', 'tarjeta')" class="text-slate-500 hover:text-rose-400 p-1.5 rounded-lg hover:bg-slate-700/50 transition" title="Eliminar">
                     <i class="fa-regular fa-trash-can"></i>
                   </button>
                 </div>
@@ -995,31 +1101,39 @@ const UI = {
 
     if (containerPrestamos) {
       if (AppState.data.prestamos.length === 0) {
-        containerPrestamos.innerHTML = `<p class="text-sm text-slate-500 py-4 text-center">No hay préstamos activos.</p>`;
+        containerPrestamos.innerHTML = `<p class="text-sm text-slate-500 py-4 text-center col-span-2">No hay préstamos activos.</p>`;
       } else {
         containerPrestamos.innerHTML = AppState.data.prestamos.map(p => {
-          const pct = Math.min(100, Math.round((p.cuotas_pagadas / (p.cuotas_totales || 1)) * 100));
+          const restCuotas = Math.max(0, (p.cuotas_totales || 1) - (p.cuotas_pagadas || 0));
+          const restMonto = restCuotas * (parseFloat(p.monto_cuota) || 0);
+          const pct = Math.min(100, Math.round(((p.cuotas_pagadas || 0) / (p.cuotas_totales || 1)) * 100));
           return `
-            <div class="p-4 bg-slate-800/60 rounded-xl border border-slate-700/50 space-y-3">
+            <div class="p-4 bg-slate-800/60 rounded-2xl border border-slate-700/50 space-y-3">
               <div class="flex justify-between items-start">
                 <div>
-                  <h4 class="font-semibold text-white text-sm">${p.prestamo}</h4>
-                  <span class="text-xs text-slate-400">${p.cuotas_pagadas}/${p.cuotas_totales} cuotas abonadas (${pct}%)</span>
+                  <h4 class="font-bold text-white text-sm">${p.prestamo}</h4>
+                  <span class="text-xs text-slate-400">${p.cuotas_pagadas || 0}/${p.cuotas_totales} cuotas abonadas (${pct}%)</span>
                 </div>
-                <span class="text-sm font-bold text-violet-400">${UI.formatCurrency(p.monto_cuota)} / mes</span>
+                <div class="text-right">
+                  <span class="text-sm font-extrabold text-violet-400 block">${UI.formatCurrency(p.monto_cuota)} / mes</span>
+                  <span class="text-[11px] text-slate-400">Resta: ${UI.formatCurrency(restMonto)}</span>
+                </div>
               </div>
               <div class="w-full bg-slate-700 h-2 rounded-full overflow-hidden">
                 <div class="bg-violet-500 h-full rounded-full transition-all duration-500" style="width: ${pct}%"></div>
               </div>
               <div class="flex justify-between items-center pt-1">
                 <span class="text-xs text-slate-400">Total: ${UI.formatCurrency(p.monto_total)}</span>
-                <div class="flex items-center gap-2">
-                  ${p.cuotas_pagadas < p.cuotas_totales ? `
-                    <button onclick="DataService.pagarCuotaDeuda('${p.id}', 'prestamo')" class="px-3 py-1 bg-violet-600 hover:bg-violet-500 text-xs font-semibold rounded-lg text-white transition">
+                <div class="flex items-center gap-1.5">
+                  ${(p.cuotas_pagadas || 0) < p.cuotas_totales ? `
+                    <button onclick="DataService.pagarCuotaDeuda('${p.id}', 'prestamo')" class="px-2.5 py-1 bg-violet-600 hover:bg-violet-500 text-xs font-semibold rounded-lg text-white transition active:scale-95">
                       Pagar Cuota
                     </button>
-                  ` : `<span class="text-xs text-emerald-400 font-semibold">Cancelado</span>`}
-                  <button onclick="DataService.deleteDeuda('${p.id}', 'prestamo')" class="text-slate-500 hover:text-rose-400 p-1.5 transition">
+                  ` : `<span class="text-xs text-emerald-400 font-semibold px-2">Cancelado</span>`}
+                  <button onclick="abrirModalEditarDeuda('${p.id}', 'prestamo')" class="text-slate-400 hover:text-violet-300 p-1.5 rounded-lg hover:bg-slate-700/50 transition" title="Editar préstamo">
+                    <i class="fa-solid fa-pen-to-square"></i>
+                  </button>
+                  <button onclick="DataService.deleteDeuda('${p.id}', 'prestamo')" class="text-slate-500 hover:text-rose-400 p-1.5 rounded-lg hover:bg-slate-700/50 transition" title="Eliminar">
                     <i class="fa-regular fa-trash-can"></i>
                   </button>
                 </div>

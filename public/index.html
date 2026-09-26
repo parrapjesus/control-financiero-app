@@ -103,8 +103,14 @@
             <span class="text-xs font-medium text-indigo-300 uppercase tracking-wider flex items-center gap-1.5">
               <i class="fa-solid fa-shield-halved"></i> Saldo Real Disponible
             </span>
-            <div id="metric-saldo-real" class="text-3xl sm:text-4xl font-extrabold text-white mt-1.5 tracking-tight">$0</div>
+            <div onclick="abrirModalAjustarSaldo()" class="text-3xl sm:text-4xl font-extrabold text-white mt-1.5 tracking-tight cursor-pointer hover:text-emerald-300 transition flex items-center gap-2 group" title="Toca para ajustar directamente tu capital">
+              <span id="metric-saldo-real">$0</span>
+              <i class="fa-solid fa-pen-to-square text-xs opacity-50 group-hover:opacity-100 text-emerald-400"></i>
+            </div>
             <p class="text-xs text-slate-400 mt-1">Saldo en mano descontando gastos pagados de este mes</p>
+            <button onclick="abrirModalAjustarSaldo()" class="mt-2.5 px-3 py-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 rounded-xl text-xs font-bold flex items-center gap-1.5 transition active:scale-95 shadow-sm">
+              <i class="fa-solid fa-sliders"></i> Ajustar Capital / Saldo Real
+            </button>
           </div>
           <div class="bg-slate-800/80 border border-slate-700/60 rounded-2xl p-3.5 text-right w-full sm:w-auto">
             <span class="text-xs text-slate-400">Saldo Proyectado Fin de Mes</span>
@@ -158,7 +164,7 @@
             <button onclick="UI.switchTab('ai')" class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 rounded-2xl text-sm font-bold text-white flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/30 transition">
               <i class="fa-solid fa-microphone"></i> Abrir Asistente Inteligente
             </button>
-            <button onclick="document.getElementById('modal-reconciliar').classList.remove('hidden')" class="w-full py-2.5 bg-slate-800 hover:bg-slate-700 rounded-2xl text-xs font-semibold text-slate-300 border border-slate-700 transition flex items-center justify-center gap-2">
+            <button onclick="abrirModalAjustarSaldo()" class="w-full py-2.5 bg-slate-800 hover:bg-slate-700 rounded-2xl text-xs font-semibold text-slate-300 border border-slate-700 transition flex items-center justify-center gap-2">
               <i class="fa-solid fa-sliders"></i> Ajustar / Reconciliar Saldo
             </button>
           </div>
@@ -255,11 +261,30 @@
       <div class="flex items-center justify-between">
         <div>
           <h2 class="text-lg font-bold text-white">Tarjetas & Préstamos</h2>
-          <p class="text-xs text-slate-400">Seguimiento de compras en cuotas y créditos</p>
+          <p class="text-xs text-slate-400">Seguimiento de compras en cuotas, préstamos y compromisos</p>
         </div>
         <button onclick="document.getElementById('modal-add-deuda').classList.remove('hidden')" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold flex items-center gap-2 transition shadow-lg shadow-indigo-600/30">
           <i class="fa-solid fa-plus"></i> Registrar Deuda
         </button>
+      </div>
+
+      <!-- Resumen de Deudas -->
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div class="glass-panel p-4 rounded-2xl border border-rose-500/20 bg-rose-950/10">
+          <span class="text-xs text-rose-300 flex items-center gap-1.5"><i class="fa-solid fa-hand-holding-dollar"></i> Total Deuda Pendiente</span>
+          <div id="metric-total-deuda" class="text-xl sm:text-2xl font-black text-rose-400 mt-1">$0</div>
+          <span class="text-[11px] text-slate-400">Capital restante por saldar</span>
+        </div>
+        <div class="glass-panel p-4 rounded-2xl border border-indigo-500/20 bg-indigo-950/10">
+          <span class="text-xs text-indigo-300 flex items-center gap-1.5"><i class="fa-solid fa-calendar-days"></i> Cuotas de Este Mes</span>
+          <div id="metric-cuotas-mes-deuda" class="text-xl sm:text-2xl font-black text-indigo-300 mt-1">$0</div>
+          <span class="text-[11px] text-slate-400">Compromiso mensual actual</span>
+        </div>
+        <div class="glass-panel p-4 rounded-2xl border border-slate-700/40 bg-slate-800/40">
+          <span class="text-xs text-slate-400 flex items-center gap-1.5"><i class="fa-solid fa-receipt"></i> Deudas Activas</span>
+          <div id="metric-deudas-activas" class="text-xl sm:text-2xl font-black text-white mt-1">0</div>
+          <span class="text-[11px] text-slate-400">Tarjetas y préstamos en curso</span>
+        </div>
       </div>
 
       <!-- Tarjetas -->
@@ -529,9 +554,15 @@
             <input type="number" min="1" id="in-deuda-cuotas" required placeholder="1" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
           </div>
         </div>
-        <div>
-          <label class="text-xs text-slate-400 block mb-1">Método / Tarjeta</label>
-          <select id="in-deuda-metodo" class="select-metodos-pago w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white"></select>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="text-xs text-slate-400 block mb-1">Cuotas ya Pagadas</label>
+            <input type="number" min="0" id="in-deuda-cuotas-pagadas" value="0" placeholder="0" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
+          </div>
+          <div>
+            <label class="text-xs text-slate-400 block mb-1">Método / Tarjeta</label>
+            <select id="in-deuda-metodo" class="select-metodos-pago w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white"></select>
+          </div>
         </div>
         <div class="flex gap-2 pt-2">
           <button type="button" onclick="document.getElementById('modal-add-deuda').classList.add('hidden')" class="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 rounded-xl text-xs font-semibold text-slate-300">Cancelar</button>
@@ -541,28 +572,160 @@
     </div>
   </div>
 
-  <!-- Modal Reconciliar Saldo -->
+  <!-- Modal Editar Deuda -->
+  <div id="modal-edit-deuda" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+      <div class="flex justify-between items-center">
+        <h3 id="modal-edit-deuda-title" class="text-base font-bold text-white flex items-center gap-2">
+          <i class="fa-solid fa-pen-to-square text-indigo-400"></i> Modificar Deuda / Cuotas
+        </h3>
+        <button onclick="document.getElementById('modal-edit-deuda').classList.add('hidden')" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <form onsubmit="event.preventDefault(); submitEditarDeuda();" class="space-y-3">
+        <input type="hidden" id="in-edit-deuda-id">
+        <input type="hidden" id="in-edit-deuda-tipo">
+
+        <div>
+          <label class="text-xs text-slate-400 block mb-1">Descripción / Concepto</label>
+          <input type="text" id="in-edit-deuda-nombre" required placeholder="Ej: Tarjeta Visa, Préstamo" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="text-xs text-slate-400 block mb-1">Monto Total ($)</label>
+            <input type="number" step="any" id="in-edit-deuda-total" oninput="actualizarPreviewEditDeuda()" required placeholder="0.00" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
+          </div>
+          <div>
+            <label class="text-xs text-slate-400 block mb-1">Monto por Cuota ($)</label>
+            <input type="number" step="any" id="in-edit-deuda-monto-cuota" oninput="actualizarPreviewEditDeuda(true)" required placeholder="0.00" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="text-xs text-slate-400 block mb-1">Cuotas Totales</label>
+            <input type="number" min="1" id="in-edit-deuda-cuotas-totales" oninput="actualizarPreviewEditDeuda()" required placeholder="1" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
+          </div>
+          <div>
+            <label class="text-xs text-slate-400 block mb-1">Cuotas ya Pagadas</label>
+            <input type="number" min="0" id="in-edit-deuda-cuotas-pagadas" oninput="actualizarPreviewEditDeuda()" required placeholder="0" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
+          </div>
+        </div>
+
+        <!-- Live preview of remaining debt -->
+        <div id="edit-deuda-preview" class="p-3 bg-slate-800/60 rounded-xl border border-slate-700/50 text-xs space-y-1">
+          <div class="flex justify-between text-slate-300">
+            <span>Cuotas restantes por pagar:</span>
+            <span id="preview-cuotas-restantes" class="font-bold text-white">0</span>
+          </div>
+          <div class="flex justify-between text-slate-300">
+            <span>Saldo restante a pagar:</span>
+            <span id="preview-saldo-restante" class="font-bold text-indigo-400">$0</span>
+          </div>
+        </div>
+
+        <div>
+          <label class="text-xs text-slate-400 block mb-1">Método / Tarjeta</label>
+          <select id="in-edit-deuda-metodo" class="select-metodos-pago w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white"></select>
+        </div>
+
+        <div class="flex gap-2 pt-2">
+          <button type="button" onclick="document.getElementById('modal-edit-deuda').classList.add('hidden')" class="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 rounded-xl text-xs font-semibold text-slate-300">Cancelar</button>
+          <button type="submit" class="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-xs font-semibold text-white">Guardar Cambios</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal Editar Servicio -->
+  <div id="modal-edit-servicio" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+      <div class="flex justify-between items-center">
+        <h3 class="text-base font-bold text-white flex items-center gap-2">
+          <i class="fa-solid fa-pen-to-square text-indigo-400"></i> Editar Servicio Fijo
+        </h3>
+        <button onclick="document.getElementById('modal-edit-servicio').classList.add('hidden')" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <form onsubmit="event.preventDefault(); submitEditarServicio();" class="space-y-3">
+        <input type="hidden" id="in-edit-servicio-id">
+        <div>
+          <label class="text-xs text-slate-400 block mb-1">Nombre del Servicio</label>
+          <input type="text" id="in-edit-servicio-nombre" required placeholder="Ej: Internet, Luz" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="text-xs text-slate-400 block mb-1">Monto ($)</label>
+            <input type="number" step="any" id="in-edit-servicio-monto" required placeholder="0.00" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
+          </div>
+          <div>
+            <label class="text-xs text-slate-400 block mb-1">Día Vencimiento (1-31)</label>
+            <input type="number" min="1" max="31" id="in-edit-servicio-venc" required placeholder="10" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
+          </div>
+        </div>
+        <div class="flex gap-2 pt-2">
+          <button type="button" onclick="document.getElementById('modal-edit-servicio').classList.add('hidden')" class="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 rounded-xl text-xs font-semibold text-slate-300">Cancelar</button>
+          <button type="submit" class="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-xs font-semibold text-white">Guardar Cambios</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal Reconciliar / Ajustar Capital -->
   <div id="modal-reconciliar" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
     <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl">
       <div class="flex justify-between items-center">
         <h3 class="text-base font-bold text-white flex items-center gap-2">
-          <i class="fa-solid fa-sliders text-indigo-400"></i> Reconciliar Saldo Real
+          <i class="fa-solid fa-sliders text-emerald-400"></i> Ajustar Capital / Saldo Real
         </h3>
         <button onclick="document.getElementById('modal-reconciliar').classList.add('hidden')" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
       </div>
-      <form onsubmit="event.preventDefault(); submitReconciliar();" class="space-y-3">
-        <p class="text-xs text-slate-400">Ingresa cuánto dinero exacto tienes en tu cuenta para que el sistema ajuste tus gastos e ingresos automáticamente.</p>
+
+      <div class="p-3.5 bg-slate-800/60 rounded-2xl border border-slate-700/50 flex justify-between items-center text-xs">
+        <span class="text-slate-400">Capital calculado en sistema:</span>
+        <span id="reconciliar-saldo-actual" class="text-sm font-extrabold text-white">$0</span>
+      </div>
+
+      <form onsubmit="event.preventDefault(); submitReconciliar();" class="space-y-3.5">
         <div>
-          <label class="text-xs text-slate-400 block mb-1">Saldo Real en Mano ($)</label>
-          <input type="number" step="any" id="in-reconciliar-saldo" required placeholder="0.00" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
+          <label class="text-xs font-semibold text-slate-300 block mb-1">
+            ¿Cuánto dinero real tienes en mano o banco ahora?
+          </label>
+          <div class="relative">
+            <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold">$</span>
+            <input type="number" step="any" id="in-reconciliar-saldo" oninput="actualizarDiferenciaReconciliar()" required placeholder="0.00" class="w-full bg-slate-950 border border-slate-700 focus:border-emerald-500 rounded-xl pl-8 pr-3 py-2.5 text-base font-bold text-white transition">
+          </div>
         </div>
-        <div class="flex items-center gap-2 pt-1">
-          <input type="checkbox" id="in-reconciliar-servicios" class="w-4 h-4 rounded bg-slate-900 text-indigo-600 border-slate-700">
-          <label for="in-reconciliar-servicios" class="text-xs text-slate-300">Marcar todos los servicios como pagados</label>
+
+        <!-- Live difference preview box -->
+        <div id="reconciliar-dif-box" class="p-3 rounded-xl border border-slate-700 bg-slate-800/40 text-xs space-y-1 transition-all">
+          <div id="reconciliar-dif-texto" class="font-medium text-slate-300">
+            Ingresa tu dinero real para calcular el ajuste necesario.
+          </div>
         </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="text-xs text-slate-400 block mb-1">Billetera / Cuenta</label>
+            <select id="in-reconciliar-metodo" class="select-metodos-pago w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"></select>
+          </div>
+          <div>
+            <label class="text-xs text-slate-400 block mb-1">Motivo (Opcional)</label>
+            <input type="text" id="in-reconciliar-motivo" placeholder="Ajuste de plata en mano" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white">
+          </div>
+        </div>
+
+        <div class="p-3 bg-slate-950/60 rounded-xl border border-slate-800 space-y-2">
+          <label class="flex items-start gap-2.5 cursor-pointer">
+            <input type="checkbox" id="in-reconciliar-servicios" class="w-4 h-4 mt-0.5 rounded bg-slate-900 text-emerald-600 border-slate-700">
+            <span class="text-xs text-slate-300">Marcar servicios fijos pendientes de este mes como <strong>pagados</strong> (si ya los pagaste con ese dinero).</span>
+          </label>
+        </div>
+
         <div class="flex gap-2 pt-2">
-          <button type="button" onclick="document.getElementById('modal-reconciliar').classList.add('hidden')" class="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 rounded-xl text-xs font-semibold text-slate-300">Cancelar</button>
-          <button type="submit" class="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-xs font-semibold text-white">Reconciliar</button>
+          <button type="button" onclick="document.getElementById('modal-reconciliar').classList.add('hidden')" class="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 rounded-xl text-xs font-semibold text-slate-300 transition">Cancelar</button>
+          <button type="submit" id="btn-submit-reconciliar" class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-xl text-xs font-bold text-white transition shadow-lg shadow-emerald-600/30">
+            Actualizar Capital
+          </button>
         </div>
       </form>
     </div>
@@ -611,20 +774,170 @@
       const nombre = document.getElementById('in-deuda-nombre').value;
       const total = document.getElementById('in-deuda-total').value;
       const cuotas = document.getElementById('in-deuda-cuotas').value;
+      const pagadas = document.getElementById('in-deuda-cuotas-pagadas') ? document.getElementById('in-deuda-cuotas-pagadas').value : 0;
       const metodo = document.getElementById('in-deuda-metodo').value;
-      DataService.addDeuda(tipo, nombre, total, cuotas, metodo);
+      DataService.addDeuda(tipo, nombre, total, cuotas, metodo, pagadas);
       document.getElementById('modal-add-deuda').classList.add('hidden');
       document.getElementById('in-deuda-nombre').value = '';
       document.getElementById('in-deuda-total').value = '';
       document.getElementById('in-deuda-cuotas').value = '';
+      if (document.getElementById('in-deuda-cuotas-pagadas')) document.getElementById('in-deuda-cuotas-pagadas').value = '0';
+    }
+
+    // --- AJUSTE DIRECTO DE CAPITAL / RECONCILIACIÓN ---
+    function abrirModalAjustarSaldo() {
+      const current = Calculations.getMetrics().saldoReal;
+      const saldoActualEl = document.getElementById('reconciliar-saldo-actual');
+      if (saldoActualEl) saldoActualEl.textContent = UI.formatCurrency(current);
+
+      const inSaldo = document.getElementById('in-reconciliar-saldo');
+      if (inSaldo) {
+        inSaldo.value = Math.round(current);
+      }
+      const inMotivo = document.getElementById('in-reconciliar-motivo');
+      if (inMotivo) inMotivo.value = '';
+      const inServ = document.getElementById('in-reconciliar-servicios');
+      if (inServ) inServ.checked = false;
+
+      actualizarDiferenciaReconciliar();
+      document.getElementById('modal-reconciliar').classList.remove('hidden');
+      setTimeout(() => inSaldo && inSaldo.select(), 100);
+    }
+
+    function actualizarDiferenciaReconciliar() {
+      const current = Calculations.getMetrics().saldoReal;
+      const inSaldo = document.getElementById('in-reconciliar-saldo');
+      const difBox = document.getElementById('reconciliar-dif-box');
+      const difTexto = document.getElementById('reconciliar-dif-texto');
+      const btnSubmit = document.getElementById('btn-submit-reconciliar');
+
+      if (!inSaldo || !difBox || !difTexto) return;
+
+      const typedVal = parseFloat(inSaldo.value);
+      if (isNaN(typedVal)) {
+        difBox.className = 'p-3 rounded-xl border border-slate-700 bg-slate-800/40 text-xs text-slate-400';
+        difTexto.textContent = 'Ingresa el monto que tienes disponible hoy.';
+        if (btnSubmit) btnSubmit.textContent = 'Actualizar Capital';
+        return;
+      }
+
+      const dif = typedVal - current;
+
+      if (Math.abs(dif) < 1) {
+        difBox.className = 'p-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-xs text-emerald-300';
+        difTexto.innerHTML = `<i class="fa-solid fa-circle-check mr-1 text-emerald-400"></i> Tu dinero en mano coincide con el sistema ($${Math.round(typedVal).toLocaleString('es-AR')}). No requiere ajuste.`;
+      } else if (dif < 0) {
+        difBox.className = 'p-3 rounded-xl border border-rose-500/30 bg-rose-500/10 text-xs text-rose-300';
+        difTexto.innerHTML = `<i class="fa-solid fa-arrow-trend-down mr-1 text-rose-400 font-bold"></i> <strong>Menos plata en mano:</strong> Tienes <strong>${UI.formatCurrency(Math.abs(dif))}</strong> menos de lo registrado. Se creará automáticamente un gasto de ajuste para cuadrar tu capital.`;
+      } else {
+        difBox.className = 'p-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-xs text-emerald-300';
+        difTexto.innerHTML = `<i class="fa-solid fa-arrow-trend-up mr-1 text-emerald-400 font-bold"></i> <strong>Más plata en mano:</strong> Tienes <strong>${UI.formatCurrency(dif)}</strong> extra no registrados. Se creará automáticamente un ingreso de ajuste para cuadrar tu capital.`;
+      }
+
+      if (btnSubmit) {
+        btnSubmit.textContent = `Confirmar y Fijar Capital en ${UI.formatCurrency(typedVal)}`;
+      }
     }
 
     function submitReconciliar() {
-      const saldo = document.getElementById('in-reconciliar-saldo').value;
+      const inSaldo = document.getElementById('in-reconciliar-saldo');
+      if (!inSaldo || isNaN(parseFloat(inSaldo.value))) return;
+      const saldo = parseFloat(inSaldo.value);
       const marcarServ = document.getElementById('in-reconciliar-servicios').checked;
-      DataService.reconciliarSaldo(saldo, marcarServ, [], 'General');
+      const metodo = document.getElementById('in-reconciliar-metodo').value || 'General';
+      const motivo = document.getElementById('in-reconciliar-motivo').value.trim() || 'Ajuste de Capital (Reconciliación)';
+
+      DataService.reconciliarSaldo(saldo, marcarServ, [], metodo, motivo);
       document.getElementById('modal-reconciliar').classList.add('hidden');
-      document.getElementById('in-reconciliar-saldo').value = '';
+    }
+
+    // --- EDICIÓN DIRECTA DE DEUDAS (TARJETAS Y PRÉSTAMOS) ---
+    function abrirModalEditarDeuda(id, tipo) {
+      const lista = tipo === 'tarjeta' ? AppState.data.tarjetas : AppState.data.prestamos;
+      const item = lista.find(d => d.id === id);
+      if (!item) return;
+
+      document.getElementById('in-edit-deuda-id').value = id;
+      document.getElementById('in-edit-deuda-tipo').value = tipo;
+      document.getElementById('modal-edit-deuda-title').innerHTML = `
+        <i class="fa-solid fa-pen-to-square text-indigo-400"></i> Modificar ${tipo === 'tarjeta' ? 'Tarjeta' : 'Préstamo'}: ${item.compra || item.prestamo}
+      `;
+      document.getElementById('in-edit-deuda-nombre').value = item.compra || item.prestamo;
+      document.getElementById('in-edit-deuda-total').value = item.monto_total;
+      document.getElementById('in-edit-deuda-cuotas-totales').value = item.cuotas_totales;
+      document.getElementById('in-edit-deuda-cuotas-pagadas').value = item.cuotas_pagadas || 0;
+      document.getElementById('in-edit-deuda-monto-cuota').value = item.monto_cuota;
+
+      const selMetodo = document.getElementById('in-edit-deuda-metodo');
+      if (selMetodo) selMetodo.value = item.metodo || 'Tarjeta de Crédito';
+
+      actualizarPreviewEditDeuda(true);
+      document.getElementById('modal-edit-deuda').classList.remove('hidden');
+    }
+
+    function actualizarPreviewEditDeuda(manualCuota = false) {
+      const total = parseFloat(document.getElementById('in-edit-deuda-total').value) || 0;
+      const cuotasTot = parseInt(document.getElementById('in-edit-deuda-cuotas-totales').value, 10) || 1;
+      const cuotasPag = parseInt(document.getElementById('in-edit-deuda-cuotas-pagadas').value, 10) || 0;
+      const inputCuota = document.getElementById('in-edit-deuda-monto-cuota');
+
+      if (!manualCuota && cuotasTot > 0 && inputCuota) {
+        inputCuota.value = Math.round(total / cuotasTot);
+      }
+
+      const montoCuota = parseFloat(inputCuota?.value) || (cuotasTot > 0 ? total / cuotasTot : 0);
+      const cuotasRest = Math.max(0, cuotasTot - cuotasPag);
+      const restante = cuotasRest * montoCuota;
+
+      const previewCuotas = document.getElementById('preview-cuotas-restantes');
+      const previewSaldo = document.getElementById('preview-saldo-restante');
+      if (previewCuotas) previewCuotas.textContent = `${cuotasRest} de ${cuotasTot} cuotas`;
+      if (previewSaldo) previewSaldo.textContent = UI.formatCurrency(restante);
+    }
+
+    function submitEditarDeuda() {
+      const id = document.getElementById('in-edit-deuda-id').value;
+      const tipo = document.getElementById('in-edit-deuda-tipo').value;
+      const nombre = document.getElementById('in-edit-deuda-nombre').value.trim();
+      const total = parseFloat(document.getElementById('in-edit-deuda-total').value) || 0;
+      const cuotasTot = parseInt(document.getElementById('in-edit-deuda-cuotas-totales').value, 10) || 1;
+      const cuotasPag = parseInt(document.getElementById('in-edit-deuda-cuotas-pagadas').value, 10) || 0;
+      const montoCuota = parseFloat(document.getElementById('in-edit-deuda-monto-cuota').value) || (total / cuotasTot);
+      const metodo = document.getElementById('in-edit-deuda-metodo').value;
+
+      DataService.updateDeuda(id, tipo, {
+        nombre,
+        monto_total: total,
+        cuotas_totales: cuotasTot,
+        cuotas_pagadas: cuotasPag,
+        monto_cuota: montoCuota,
+        metodo
+      });
+
+      document.getElementById('modal-edit-deuda').classList.add('hidden');
+    }
+
+    // --- EDICIÓN DIRECTA DE SERVICIOS FIJOS ---
+    function abrirModalEditarServicio(id) {
+      const serv = AppState.data.servicios.find(s => s.id === id);
+      if (!serv) return;
+
+      document.getElementById('in-edit-servicio-id').value = id;
+      document.getElementById('in-edit-servicio-nombre').value = serv.servicio;
+      document.getElementById('in-edit-servicio-monto').value = serv.monto;
+      document.getElementById('in-edit-servicio-venc').value = serv.vencimiento;
+
+      document.getElementById('modal-edit-servicio').classList.remove('hidden');
+    }
+
+    function submitEditarServicio() {
+      const id = document.getElementById('in-edit-servicio-id').value;
+      const servicio = document.getElementById('in-edit-servicio-nombre').value.trim();
+      const monto = parseFloat(document.getElementById('in-edit-servicio-monto').value) || 0;
+      const vencimiento = parseInt(document.getElementById('in-edit-servicio-venc').value, 10) || 1;
+
+      DataService.updateServicio(id, { servicio, monto, vencimiento });
+      document.getElementById('modal-edit-servicio').classList.add('hidden');
     }
 
     function handleAddMetodo() {
