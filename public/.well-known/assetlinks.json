@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "app.vercel.control_financiero_app_ten.twa",
+      "sha256_cert_fingerprints": [
+        "A5:C5:F0:61:D3:64:18:DC:6E:59:1A:D6:96:BA:FC:3E:A6:30:D7:E0:26:5A:21:EB:2B:ED:61:1D:92:BA:1C:F6"
+      ]
+    }
+  }
+]
