@@ -22,7 +22,13 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { prompt, financialContext, apiKey: clientApiKey } = req.body || {};
+    let body = req.body;
+    if (typeof body === 'string') {
+      try {
+        body = JSON.parse(body);
+      } catch (e) {}
+    }
+    const { prompt, financialContext, apiKey: clientApiKey } = body || {};
 
     if (!prompt || typeof prompt !== 'string') {
       return res.status(400).json({ error: 'El parámetro "prompt" es obligatorio.' });
