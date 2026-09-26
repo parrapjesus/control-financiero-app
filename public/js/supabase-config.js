@@ -7,8 +7,8 @@
 
 const SupabaseConfig = {
   // Configuración predeterminada o guardada por el usuario
-  getUrl: () => localStorage.getItem('CFP_SUPABASE_URL') || window.__ENV_SUPABASE_URL__ || '',
-  getKey: () => localStorage.getItem('CFP_SUPABASE_ANON_KEY') || window.__ENV_SUPABASE_ANON_KEY__ || '',
+  getUrl: () => localStorage.getItem('CFP_SUPABASE_URL') || window.__ENV_SUPABASE_URL__ || 'https://kqoofxosufvhlsotxwdh.supabase.co',
+  getKey: () => localStorage.getItem('CFP_SUPABASE_ANON_KEY') || window.__ENV_SUPABASE_ANON_KEY__ || 'sb_publishable_p0w_8FgEhUGP95ZosgAs0w_TK34GghL',
 
   saveCredentials: (url, anonKey) => {
     if (url) localStorage.setItem('CFP_SUPABASE_URL', url.trim());
