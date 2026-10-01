@@ -19,6 +19,7 @@ const SupabaseConfig = {
   client: null,
 
   init: () => {
+    if (SupabaseConfig.client) return SupabaseConfig.client;
     const url = SupabaseConfig.getUrl();
     const key = SupabaseConfig.getKey();
 
@@ -36,7 +37,7 @@ const SupabaseConfig = {
         console.error('❌ Error al inicializar Supabase:', err);
       }
     } else {
-      console.warn('⚠️ Supabase no está configurado aún. Se usarán datos de demostración / LocalStorage.');
+      console.warn('⚠️ Supabase SDK aún no disponible o credenciales incompletas.');
     }
     return null;
   },
@@ -46,7 +47,10 @@ const SupabaseConfig = {
   }
 };
 
-// Inicialización automática
+// Inicialización inmediata y en DOMContentLoaded
+if (typeof window !== 'undefined' && window.supabase) {
+  SupabaseConfig.init();
+}
 window.addEventListener('DOMContentLoaded', () => {
   SupabaseConfig.init();
 });

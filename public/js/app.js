@@ -34,7 +34,20 @@ function getTodayString() {
 const DataService = {
   // Carga inicial de datos
   async loadAllData() {
-    const client = SupabaseConfig.client;
+    let client = SupabaseConfig.client;
+    if (!client && SupabaseConfig.isConfigured()) {
+      client = SupabaseConfig.init();
+    }
+    // Si Supabase CDN aún está descargando en el teléfono, esperar hasta 1.5s
+    if (!client && typeof window !== 'undefined' && !window.supabase) {
+      for (let i = 0; i < 15; i++) {
+        await new Promise(r => setTimeout(r, 100));
+        if (window.supabase) {
+          client = SupabaseConfig.init();
+          break;
+        }
+      }
+    }
 
     if (client && SupabaseConfig.isConfigured()) {
       try {
@@ -933,14 +946,56 @@ const UI = {
   renderDashboard() {
     const m = Calculations.getMetrics();
 
-    document.getElementById('metric-saldo-real').textContent = UI.formatCurrency(m.saldoReal);
-    document.getElementById('metric-ingresos').textContent = UI.formatCurrency(m.totalIngresos);
-    document.getElementById('metric-gastos-diarios').textContent = UI.formatCurrency(m.totalGastosDiarios);
-    document.getElementById('metric-servicios-fijos').textContent = UI.formatCurrency(m.totalServicios);
-    document.getElementById('metric-servicios-pendientes').textContent = UI.formatCurrency(m.totalServiciosPendientes);
-    document.getElementById('metric-saldo-proyectado').textContent = UI.formatCurrency(m.saldoProyectado);
+    const elSaldoReal = document.getElementById('metric-saldo-real');
+    const elIngresos = document.getElementById('metric-ingresos');
+    const elGastosDiarios = document.getElementById('metric-gastos-diarios');
+    const elServiciosFijos = document.getElementById('metric-servicios-fijos');
+    const elServiciosPendientes = document.getElementById('metric-servicios-pendientes');
+    const elSaldoProyectado = document.getElementById('metric-saldo-proyectado');
 
+    if (elSaldoReal) elSaldoReal.textContent = UI.formatCurrency(m.saldoReal);
+    if (elIngresos) elIngresos.textContent = UI.formatCurrency(m.totalIngresos);
+    if (elGastosDiarios) elGastosDiarios.textContent = UI.formatCurrency(m.totalGastosDiarios);
+    if (elServiciosFijos) elServiciosFijos.textContent = UI.formatCurrency(m.totalServicios);
+    if (elServiciosPendientes) elServiciosPendientes.textContent = UI.formatCurrency(m.totalServiciosPendientes);
+    if (elSaldoProyectado) elSaldoProyectado.textContent = UI.formatCurrency(m.saldoProyectado);
+
+    UI.renderDashboardIngresos();
     UI.renderChart(m);
+  },
+
+  renderDashboardIngresos() {
+    const container = document.getElementById('dashboard-recent-ingresos');
+    if (!container) return;
+
+    if (!AppState.data.ingresos || AppState.data.ingresos.length === 0) {
+      container.innerHTML = `
+        <div class="text-center py-6 text-slate-500 bg-slate-900/40 rounded-2xl border border-slate-800">
+          <i class="fa-solid fa-wallet text-2xl mb-1.5 opacity-60"></i>
+          <p class="text-xs">No hay fondos o ingresos registrados todavía.</p>
+        </div>`;
+      return;
+    }
+
+    container.innerHTML = AppState.data.ingresos.map(i => `
+      <div class="flex items-center justify-between p-3.5 bg-slate-800/60 rounded-xl border border-slate-700/50 hover:border-slate-600 transition">
+        <div class="flex items-center gap-3">
+          <div class="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center font-bold text-xs">
+            <i class="fa-solid fa-arrow-down"></i>
+          </div>
+          <div>
+            <h4 class="text-sm font-semibold text-white">${i.descripcion}</h4>
+            <span class="text-xs text-slate-400">${i.metodo || 'General'} • ${i.fecha || ''}</span>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="text-sm font-bold text-emerald-400">+${UI.formatCurrency(i.monto)}</span>
+          <button onclick="DataService.deleteIngreso('${i.id}')" class="text-slate-500 hover:text-rose-400 p-1.5 transition" title="Eliminar ingreso">
+            <i class="fa-regular fa-trash-can text-xs"></i>
+          </button>
+        </div>
+      </div>
+    `).join('');
   },
 
   renderChart(m) {

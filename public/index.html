@@ -60,7 +60,7 @@
     .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 999px; }
   </style>
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col pb-24 md:pb-6">
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col pb-28 md:pb-12">
 
   <!-- ================= TOP HEADER ================= -->
   <header class="sticky top-0 z-40 glass-panel border-b border-slate-800/80 px-4 py-3.5">
@@ -168,6 +168,28 @@
               <i class="fa-solid fa-sliders"></i> Ajustar / Reconciliar Saldo
             </button>
           </div>
+        </div>
+      </div>
+
+      <!-- Fondos e Ingresos Registrados en Dashboard -->
+      <div class="glass-panel rounded-3xl p-6 space-y-4">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2.5">
+            <div class="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
+              <i class="fa-solid fa-money-bill-transfer"></i>
+            </div>
+            <div>
+              <h3 class="text-sm font-bold text-white">Fondos e Ingresos Registrados</h3>
+              <p class="text-xs text-slate-400">Tus cuentas y plata cargada en el sistema</p>
+            </div>
+          </div>
+          <button onclick="document.getElementById('modal-add-ingreso').classList.remove('hidden')" class="px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition active:scale-95 shadow-sm">
+            <i class="fa-solid fa-plus"></i> Añadir Dinero
+          </button>
+        </div>
+
+        <div id="dashboard-recent-ingresos" class="space-y-2.5">
+          <!-- Inyectado por JS -->
         </div>
       </div>
     </section>
@@ -377,35 +399,37 @@
 
   </main>
 
-  <!-- ================= BOTTOM NAVIGATION BAR ================= -->
-  <nav class="fixed bottom-0 left-0 right-0 z-40 glass-panel border-t border-slate-800/80 px-1 py-1.5 bg-slate-950/90 backdrop-blur-lg shadow-2xl">
-    <div class="max-w-lg mx-auto grid grid-cols-6 gap-0.5 items-center w-full">
-      <button data-tab="dashboard" class="nav-btn active-nav flex flex-col items-center justify-center py-1 px-0.5 rounded-xl text-slate-400 text-[10px] font-medium transition hover:text-white">
-        <i class="fa-solid fa-house text-sm mb-0.5"></i>
-        <span class="truncate">Inicio</span>
-      </button>
-      <button data-tab="ai" class="nav-btn flex flex-col items-center justify-center py-1 px-0.5 rounded-xl text-slate-400 text-[10px] font-medium transition hover:text-white">
-        <i class="fa-solid fa-wand-magic-sparkles text-sm mb-0.5"></i>
-        <span class="truncate">IA</span>
-      </button>
-      <button data-tab="diarios" class="nav-btn flex flex-col items-center justify-center py-1 px-0.5 rounded-xl text-slate-400 text-[10px] font-medium transition hover:text-white">
-        <i class="fa-solid fa-cart-shopping text-sm mb-0.5"></i>
-        <span class="truncate">Diarios</span>
-      </button>
-      <button data-tab="servicios" class="nav-btn flex flex-col items-center justify-center py-1 px-0.5 rounded-xl text-slate-400 text-[10px] font-medium transition hover:text-white">
-        <i class="fa-solid fa-calendar-check text-sm mb-0.5"></i>
-        <span class="truncate">Servicios</span>
-      </button>
-      <button data-tab="deudas" class="nav-btn flex flex-col items-center justify-center py-1 px-0.5 rounded-xl text-slate-400 text-[10px] font-medium transition hover:text-white">
-        <i class="fa-solid fa-credit-card text-sm mb-0.5"></i>
-        <span class="truncate">Deudas</span>
-      </button>
-      <button data-tab="ajustes" class="nav-btn flex flex-col items-center justify-center py-1 px-0.5 rounded-xl text-slate-400 text-[10px] font-medium transition hover:text-white">
-        <i class="fa-solid fa-gear text-sm mb-0.5"></i>
-        <span class="truncate">Ajustes</span>
-      </button>
-    </div>
-  </nav>
+  <!-- ================= BOTTOM NAVIGATION BAR (FLOATING DOCK) ================= -->
+  <div class="fixed bottom-3 left-0 right-0 z-40 px-3 flex justify-center pointer-events-none">
+    <nav class="w-full max-w-md bg-slate-900/90 backdrop-blur-xl border border-slate-700/60 rounded-3xl p-1.5 shadow-2xl shadow-black/70 pointer-events-auto transition-all">
+      <div class="grid grid-cols-6 gap-1 items-center w-full">
+        <button data-tab="dashboard" class="nav-btn active-nav flex flex-col items-center justify-center py-1.5 px-0.5 rounded-2xl text-slate-400 text-[10px] font-medium transition hover:text-white">
+          <i class="fa-solid fa-house text-sm mb-0.5"></i>
+          <span class="truncate">Inicio</span>
+        </button>
+        <button data-tab="ai" class="nav-btn flex flex-col items-center justify-center py-1.5 px-0.5 rounded-2xl text-slate-400 text-[10px] font-medium transition hover:text-white">
+          <i class="fa-solid fa-wand-magic-sparkles text-sm mb-0.5"></i>
+          <span class="truncate">IA</span>
+        </button>
+        <button data-tab="diarios" class="nav-btn flex flex-col items-center justify-center py-1.5 px-0.5 rounded-2xl text-slate-400 text-[10px] font-medium transition hover:text-white">
+          <i class="fa-solid fa-cart-shopping text-sm mb-0.5"></i>
+          <span class="truncate">Diarios</span>
+        </button>
+        <button data-tab="servicios" class="nav-btn flex flex-col items-center justify-center py-1.5 px-0.5 rounded-2xl text-slate-400 text-[10px] font-medium transition hover:text-white">
+          <i class="fa-solid fa-calendar-check text-sm mb-0.5"></i>
+          <span class="truncate">Servicios</span>
+        </button>
+        <button data-tab="deudas" class="nav-btn flex flex-col items-center justify-center py-1.5 px-0.5 rounded-2xl text-slate-400 text-[10px] font-medium transition hover:text-white">
+          <i class="fa-solid fa-credit-card text-sm mb-0.5"></i>
+          <span class="truncate">Deudas</span>
+        </button>
+        <button data-tab="ajustes" class="nav-btn flex flex-col items-center justify-center py-1.5 px-0.5 rounded-2xl text-slate-400 text-[10px] font-medium transition hover:text-white">
+          <i class="fa-solid fa-gear text-sm mb-0.5"></i>
+          <span class="truncate">Ajustes</span>
+        </button>
+      </div>
+    </nav>
+  </div>
 
   <!-- ================= MODALS ================= -->
 
@@ -713,8 +737,8 @@
   <div id="toast-notification" class="fixed bottom-20 left-1/2 -translate-x-1/2 px-5 py-2.5 rounded-full text-xs font-semibold text-white shadow-xl opacity-0 pointer-events-none transition-all duration-300 z-50"></div>
 
   <!-- App Scripts -->
-  <script src="/js/supabase-config.js"></script>
-  <script src="/js/app.js"></script>
+  <script src="/js/supabase-config.js?v=5"></script>
+  <script src="/js/app.js?v=5"></script>
   <script>
     function submitIngreso() {
       const desc = document.getElementById('in-ingreso-desc').value;
@@ -942,11 +966,37 @@
       }
     }
 
-    // Registro de Service Worker para PWA / TWA
+    // Limpieza forzada de cachés antiguas en el navegador móvil
+    if ('caches' in window && localStorage.getItem('CFP_CACHE_PURGED_V5') !== 'true') {
+      caches.keys().then(keys => {
+        return Promise.all(keys.map(k => {
+          if (k !== 'cfp-cache-v5') return caches.delete(k);
+        }));
+      }).then(() => {
+        localStorage.setItem('CFP_CACHE_PURGED_V5', 'true');
+        console.log('🧹 Cachés obsoletas eliminadas del dispositivo');
+      });
+    }
+
+    // Registro de Service Worker para PWA / TWA con auto-actualización forzada
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js')
-          .then(reg => console.log('✅ Service Worker PWA registrado:', reg.scope))
+        navigator.serviceWorker.register('/sw.js?v=5')
+          .then(reg => {
+            console.log('✅ Service Worker PWA registrado:', reg.scope);
+            reg.update();
+            reg.onupdatefound = () => {
+              const installing = reg.installing;
+              if (installing) {
+                installing.onstatechange = () => {
+                  if (installing.state === 'installed' && navigator.serviceWorker.controller) {
+                    console.log('🔄 Nueva versión disponible, actualizando interfaz...');
+                    window.location.reload();
+                  }
+                };
+              }
+            };
+          })
           .catch(err => console.warn('⚠️ Error al registrar Service Worker:', err));
       });
     }
