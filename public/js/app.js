@@ -19,6 +19,14 @@ const AppState = {
   recognition: null
 };
 
+function getTodayString() {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 // ==============================================================================
 // 1. GESTIÓN DE DATOS (CRUD CON SUPABASE Y FALLBACK LOCALSTORAGE)
 // ==============================================================================
@@ -173,7 +181,7 @@ const DataService = {
   // INGRESOS
   // -------------------------------------------------------------
   async addIngreso(descripcion, monto, metodo, fecha) {
-    const fechaVal = fecha || new Date().toISOString().split('T')[0];
+    const fechaVal = fecha || getTodayString();
     const client = SupabaseConfig.client;
 
     if (client && SupabaseConfig.isConfigured()) {
@@ -220,7 +228,7 @@ const DataService = {
   // GASTOS DIARIOS
   // -------------------------------------------------------------
   async addGastoDiario(descripcion, monto, metodo, fecha) {
-    const fechaVal = fecha || new Date().toISOString().split('T')[0];
+    const fechaVal = fecha || getTodayString();
     const client = SupabaseConfig.client;
 
     if (client && SupabaseConfig.isConfigured()) {
@@ -423,7 +431,7 @@ const DataService = {
         cuotas_pagadas: pagadas,
         monto_cuota: montoCuota,
         metodo: metodo || (tipo === 'tarjeta' ? 'Tarjeta de Crédito' : 'General'),
-        fecha_inicio: new Date().toISOString().split('T')[0]
+        fecha_inicio: getTodayString()
       }]).select();
 
       if (!error && data && data[0]) {
@@ -612,17 +620,55 @@ const DataService = {
 const Calculations = {
   isCurrentMonth(dateString) {
     if (!dateString) return true;
+    if (dateString instanceof Date) {
+      const now = new Date();
+      return dateString.getFullYear() === now.getFullYear() && dateString.getMonth() === now.getMonth();
+    }
     const now = new Date();
+    const curYear = now.getFullYear();
+    const curMonth = now.getMonth() + 1;
+
+    const cleanStr = String(dateString).trim().split('T')[0].split(' ')[0];
+
+    // Formato con guiones
+    if (cleanStr.includes('-')) {
+      const parts = cleanStr.split('-');
+      if (parts.length === 3) {
+        if (parts[0].length === 4) {
+          // YYYY-MM-DD
+          return parseInt(parts[0], 10) === curYear && parseInt(parts[1], 10) === curMonth;
+        } else if (parts[2].length === 4) {
+          // DD-MM-YYYY
+          return parseInt(parts[2], 10) === curYear && parseInt(parts[1], 10) === curMonth;
+        }
+      } else if (parts.length === 2) {
+        return parseInt(parts[0], 10) === curYear && parseInt(parts[1], 10) === curMonth;
+      }
+    }
+
+    // Formato con barras DD/MM/YYYY o YYYY/MM/DD
+    if (cleanStr.includes('/')) {
+      const parts = cleanStr.split('/');
+      if (parts.length === 3) {
+        if (parts[2].length === 4) {
+          // DD/MM/YYYY
+          return parseInt(parts[2], 10) === curYear && parseInt(parts[1], 10) === curMonth;
+        } else if (parts[0].length === 4) {
+          // YYYY/MM/DD
+          return parseInt(parts[0], 10) === curYear && parseInt(parts[1], 10) === curMonth;
+        }
+      } else if (parts.length === 2) {
+        return parseInt(parts[1], 10) === curMonth;
+      }
+    }
+
+    // Fallback Date object (evitando desfasaje UTC)
     const d = new Date(dateString);
     if (!isNaN(d.getTime())) {
-      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+      return (d.getUTCFullYear() === curYear && (d.getUTCMonth() + 1) === curMonth) ||
+             (d.getFullYear() === curYear && (d.getMonth() + 1) === curMonth);
     }
-    // Soporte para formato dd/mm/yyyy
-    const parts = String(dateString).split('/');
-    if (parts.length === 3) {
-      return parseInt(parts[1], 10) === (now.getMonth() + 1) && parseInt(parts[2], 10) === now.getFullYear();
-    }
-    return true;
+    return false;
   },
 
   getMetrics() {
