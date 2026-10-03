@@ -238,6 +238,97 @@ const DataService = {
   },
 
   // -------------------------------------------------------------
+  // TRASPASO ENTRE CUENTAS / BANCOS / EFECTIVO
+  // -------------------------------------------------------------
+  async transferirDinero(origen, destino, monto, nota) {
+    const valMonto = parseFloat(monto);
+    if (!valMonto || isNaN(valMonto) || valMonto <= 0) {
+      UI.showNotification('Ingresa un monto válido para transferir', 'warning');
+      return false;
+    }
+    if (!origen || !destino) {
+      UI.showNotification('Selecciona cuenta de origen y destino', 'warning');
+      return false;
+    }
+    if (origen.trim().toLowerCase() === destino.trim().toLowerCase()) {
+      UI.showNotification('El origen y destino no pueden ser iguales', 'warning');
+      return false;
+    }
+
+    const client = SupabaseConfig.client;
+    const isSupa = client && SupabaseConfig.isConfigured();
+
+    // 1. Descontar o ajustar cuenta Origen en AppState.data.ingresos
+    const cuentaOrigen = AppState.data.ingresos.find(i => (i.metodo || '').toLowerCase() === origen.toLowerCase());
+    if (cuentaOrigen) {
+      const nuevoMontoOrigen = Math.max(0, parseFloat(cuentaOrigen.monto) - valMonto);
+      cuentaOrigen.monto = nuevoMontoOrigen;
+      if (isSupa) {
+        try {
+          await client.from('ingresos').update({ monto: nuevoMontoOrigen }).eq('id', cuentaOrigen.id);
+        } catch (e) {
+          console.error('Error actualizando cuenta origen:', e);
+        }
+      }
+    } else {
+      const nuevoOrigen = {
+        descripcion: `Fondo en ${origen}`,
+        monto: 0,
+        metodo: origen,
+        fecha: getTodayString()
+      };
+      if (isSupa) {
+        try {
+          const { data } = await client.from('ingresos').insert([nuevoOrigen]).select();
+          if (data && data[0]) nuevoOrigen.id = data[0].id;
+        } catch (e) {}
+      } else {
+        nuevoOrigen.id = Date.now().toString();
+      }
+      AppState.data.ingresos.unshift(nuevoOrigen);
+    }
+
+    // 2. Incrementar o crear cuenta Destino en AppState.data.ingresos
+    const cuentaDestino = AppState.data.ingresos.find(i => (i.metodo || '').toLowerCase() === destino.toLowerCase());
+    if (cuentaDestino) {
+      const nuevoMontoDestino = parseFloat(cuentaDestino.monto) + valMonto;
+      cuentaDestino.monto = nuevoMontoDestino;
+      if (isSupa) {
+        try {
+          await client.from('ingresos').update({ monto: nuevoMontoDestino }).eq('id', cuentaDestino.id);
+        } catch (e) {
+          console.error('Error actualizando cuenta destino:', e);
+        }
+      }
+    } else {
+      const nuevoDestino = {
+        descripcion: `Plata en ${destino}`,
+        monto: valMonto,
+        metodo: destino,
+        fecha: getTodayString()
+      };
+      if (isSupa) {
+        try {
+          const { data } = await client.from('ingresos').insert([nuevoDestino]).select();
+          if (data && data[0]) nuevoDestino.id = data[0].id;
+        } catch (e) {}
+      } else {
+        nuevoDestino.id = (Date.now() + 1).toString();
+      }
+      AppState.data.ingresos.unshift(nuevoDestino);
+    }
+
+    // 3. Registrar en Historial
+    const detalleTraspaso = `Traspaso: ${origen} ➔ ${destino}${nota ? ' • ' + nota.trim() : ''}`;
+    await DataService.logHistorial('Traspaso', detalleTraspaso, valMonto, `${origen} ➔ ${destino}`);
+
+    DataService.saveToLocalStorage();
+    UI.renderAll();
+    UI.showNotification(`🔄 Traspaso de ${UI.formatCurrency(valMonto)} (${origen} ➔ ${destino}) completado`, 'success');
+    return true;
+  },
+
+  // -------------------------------------------------------------
   // GASTOS DIARIOS
   // -------------------------------------------------------------
   async addGastoDiario(descripcion, monto, metodo, fecha) {
@@ -864,6 +955,12 @@ const AIAssistant = {
         }
         break;
 
+      case 'TRANSFERIR_DINERO':
+        if (datos.monto && datos.origen && datos.destino) {
+          await DataService.transferirDinero(datos.origen, datos.destino, datos.monto, datos.nota || '');
+        }
+        break;
+
       case 'ANALISIS':
       default:
         // No requiere mutación de base de datos
@@ -1256,20 +1353,29 @@ const UI = {
     }
 
     container.innerHTML = AppState.data.historial.slice(0, 50).map(h => {
-      const isPositive = h.categoria.toLowerCase().includes('ingreso') || h.monto > 0;
+      const isTransfer = h.categoria && h.categoria.toLowerCase().includes('traspaso');
+      const isPositive = !isTransfer && (h.categoria.toLowerCase().includes('ingreso') || h.monto > 0);
+      
+      let icon = isPositive ? 'fa-arrow-down' : 'fa-arrow-up';
+      let iconColor = isPositive ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400';
+      if (isTransfer) {
+        icon = 'fa-right-left';
+        iconColor = 'bg-blue-500/10 text-blue-400';
+      }
+
       return `
         <div class="flex items-center justify-between p-3.5 bg-slate-800/40 rounded-xl border border-slate-700/40 text-sm">
           <div class="flex items-center gap-3">
-            <div class="w-9 h-9 rounded-lg ${isPositive ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'} flex items-center justify-center font-bold text-xs">
-              <i class="fa-solid ${isPositive ? 'fa-arrow-down' : 'fa-arrow-up'}"></i>
+            <div class="w-9 h-9 rounded-lg ${iconColor} flex items-center justify-center font-bold text-xs">
+              <i class="fa-solid ${icon}"></i>
             </div>
             <div>
               <p class="font-medium text-white">${h.descripcion}</p>
               <span class="text-xs text-slate-400">${h.categoria} • ${h.metodo} • ${h.fecha}</span>
             </div>
           </div>
-          <span class="font-bold ${isPositive ? 'text-emerald-400' : 'text-slate-300'}">
-            ${isPositive ? '+' : ''}${UI.formatCurrency(h.monto)}
+          <span class="font-bold ${isTransfer ? 'text-blue-400' : (isPositive ? 'text-emerald-400' : 'text-slate-300')}">
+            ${isPositive ? '+' : (isTransfer ? '🔄 ' : '')}${UI.formatCurrency(h.monto)}
           </span>
         </div>
       `;
@@ -1283,6 +1389,17 @@ const UI = {
       sel.innerHTML = AppState.data.metodos.map(m => `<option value="${m}">${m}</option>`).join('');
       if (current && AppState.data.metodos.includes(current)) sel.value = current;
     });
+
+    // Configurar sugerencias automáticas para traspaso
+    const selOrigen = document.getElementById('in-traspaso-origen');
+    const selDestino = document.getElementById('in-traspaso-destino');
+    if (selOrigen && !selOrigen.value && AppState.data.metodos.includes('Santander')) {
+      selOrigen.value = 'Santander';
+    }
+    if (selDestino && (!selDestino.value || selDestino.value === selOrigen?.value)) {
+      if (AppState.data.metodos.includes('ARQ')) selDestino.value = 'ARQ';
+      else if (AppState.data.metodos.includes('Mercado Pago')) selDestino.value = 'Mercado Pago';
+    }
   },
 
   renderMetodosList() {

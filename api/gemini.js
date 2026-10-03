@@ -58,11 +58,14 @@ ${financialContext || 'Contexto financiero no provisto.'}
 
 REGLA OBLIGATORIA: Debes responder SIEMPRE en formato JSON puro con la siguiente estructura (NO agregues bloques markdown \`\`\`json):
 {
-  "tipo_accion": "REGISTRAR_DIARIO" | "REGISTRAR_INGRESO" | "REGISTRAR_SERVICIO" | "REGISTRAR_DEUDA" | "RECONCILIAR_SALDO" | "PAGAR_SERVICIOS" | "ANALISIS",
+  "tipo_accion": "REGISTRAR_DIARIO" | "REGISTRAR_INGRESO" | "REGISTRAR_SERVICIO" | "REGISTRAR_DEUDA" | "RECONCILIAR_SALDO" | "PAGAR_SERVICIOS" | "TRANSFERIR_DINERO" | "ANALISIS",
   "datos": {
      "descripcion": "descripción breve del movimiento",
      "monto": 0,
      "metodo": "banco o metodo de pago mas afín",
+     "origen": "banco o cuenta de donde sale el dinero",
+     "destino": "banco o cuenta a donde entra el dinero",
+     "nota": "motivo de la transferencia",
      "vencimiento": 10,
      "cuotas": 1,
      "tipo_deuda": "tarjeta" o "prestamo",
@@ -75,6 +78,7 @@ REGLA OBLIGATORIA: Debes responder SIEMPRE en formato JSON puro con la siguiente
 }
 
 Reglas de interpretación:
+- Si el usuario dice 'pasé X de banco A a banco B', 'moví X a ARQ', 'saqué X en efectivo': USA tipo_accion: 'TRANSFERIR_DINERO', origen: 'banco A', destino: 'banco B o Efectivo', monto: X, nota: 'motivo'.
 - Si el usuario dice 'ya pagué todo y me quedaron 100.000' o 'pagué todo menos X y me quedaron Y': USA tipo_accion: 'RECONCILIAR_SALDO', saldo_real_objetivo con el monto que le quedó, marcar_servicios_pagados: true, y en servicios_excluidos coloca los que haya aclarado que debe.
 - Si el usuario dice 'mi saldo real es X' o 'en la cuenta me quedaron X': USA tipo_accion: 'RECONCILIAR_SALDO' con saldo_real_objetivo: X y marcar_servicios_pagados: false.
 - Si el usuario dice 'pagué la luz' o 'marcar servicios como pagados': USA tipo_accion: 'PAGAR_SERVICIOS'.
