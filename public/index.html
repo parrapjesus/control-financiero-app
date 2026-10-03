@@ -644,6 +644,54 @@
     </div>
   </div>
 
+  <!-- Modal Pagar Cuota Deuda -->
+  <div id="modal-pagar-cuota" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+      <div class="flex justify-between items-center">
+        <h3 class="text-base font-bold text-white flex items-center gap-2">
+          <div class="w-8 h-8 rounded-xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center">
+            <i class="fa-solid fa-receipt"></i>
+          </div>
+          Abonar Cuota
+        </h3>
+        <button onclick="document.getElementById('modal-pagar-cuota').classList.add('hidden')" class="text-slate-400 hover:text-white">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <div class="p-3.5 bg-slate-800/60 rounded-2xl border border-slate-700/50 space-y-1">
+        <h4 id="pagar-cuota-nombre" class="text-sm font-bold text-white">Nombre Deuda</h4>
+        <p id="pagar-cuota-info" class="text-xs text-indigo-300 font-medium">Abonando cuota 1 de 12</p>
+      </div>
+
+      <form onsubmit="event.preventDefault(); submitPagarCuota();" class="space-y-3.5">
+        <input type="hidden" id="in-pagar-cuota-id">
+        <input type="hidden" id="in-pagar-cuota-tipo">
+
+        <div>
+          <label class="text-xs text-slate-400 block mb-1">Monto a Abonar ($)</label>
+          <input type="number" step="any" id="in-pagar-cuota-monto" required placeholder="0.00" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:border-indigo-500 transition">
+          <span class="text-[11px] text-slate-500 mt-1 block">Puedes ajustar el monto si la cuota real varió por intereses o cargos.</span>
+        </div>
+
+        <div>
+          <label class="text-xs text-slate-400 block mb-1">Debitar de Cuenta / Banco</label>
+          <select id="in-pagar-cuota-metodo" required class="select-metodos-pago w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:border-indigo-500 transition"></select>
+          <span class="text-[11px] text-slate-500 mt-1 block">El dinero se descontará de esta cuenta bancaria y actualizará tu saldo real disponible.</span>
+        </div>
+
+        <div class="flex gap-2 pt-2">
+          <button type="button" onclick="document.getElementById('modal-pagar-cuota').classList.add('hidden')" class="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 rounded-xl text-xs font-semibold text-slate-300 transition">
+            Cancelar
+          </button>
+          <button type="submit" class="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-xs font-semibold text-white shadow-lg shadow-indigo-600/30 transition flex items-center justify-center gap-1.5 active:scale-95">
+            <i class="fa-solid fa-check"></i> Confirmar Pago
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- Modal Mover Dinero entre Cuentas -->
   <div id="modal-transferir-dinero" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
     <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl">
@@ -790,8 +838,8 @@
   <div id="toast-notification" class="fixed bottom-20 left-1/2 -translate-x-1/2 px-5 py-2.5 rounded-full text-xs font-semibold text-white shadow-xl opacity-0 pointer-events-none transition-all duration-300 z-50"></div>
 
   <!-- App Scripts -->
-  <script src="/js/supabase-config.js?v=6"></script>
-  <script src="/js/app.js?v=6"></script>
+  <script src="/js/supabase-config.js?v=7"></script>
+  <script src="/js/app.js?v=7"></script>
   <script>
     function submitIngreso() {
       const desc = document.getElementById('in-ingreso-desc').value;
@@ -837,6 +885,53 @@
       document.getElementById('in-deuda-total').value = '';
       document.getElementById('in-deuda-cuotas').value = '';
       if (document.getElementById('in-deuda-cuotas-pagadas')) document.getElementById('in-deuda-cuotas-pagadas').value = '0';
+    }
+
+    // --- ABONAR CUOTA DE DEUDA ---
+    function abrirModalPagarCuota(id, tipo) {
+      const lista = tipo === 'tarjeta' ? AppState.data.tarjetas : AppState.data.prestamos;
+      const item = lista.find(d => d.id === id);
+      if (!item) return;
+
+      UI.renderMetodosSelects();
+
+      document.getElementById('in-pagar-cuota-id').value = id;
+      document.getElementById('in-pagar-cuota-tipo').value = tipo;
+
+      const nombre = item.compra || item.prestamo;
+      const sigCuota = (item.cuotas_pagadas || 0) + 1;
+      const totCuotas = item.cuotas_totales || 1;
+
+      document.getElementById('pagar-cuota-nombre').textContent = nombre;
+      document.getElementById('pagar-cuota-info').textContent = `Abonando cuota ${sigCuota} de ${totCuotas}`;
+
+      const inMonto = document.getElementById('in-pagar-cuota-monto');
+      if (inMonto) {
+        inMonto.value = item.monto_cuota || '';
+      }
+
+      const selMetodo = document.getElementById('in-pagar-cuota-metodo');
+      if (selMetodo) {
+        if (item.metodo && AppState.data.metodos.includes(item.metodo)) {
+          selMetodo.value = item.metodo;
+        } else if (AppState.data.metodos.includes('Santander')) {
+          selMetodo.value = 'Santander';
+        }
+      }
+
+      document.getElementById('modal-pagar-cuota').classList.remove('hidden');
+    }
+
+    async function submitPagarCuota() {
+      const id = document.getElementById('in-pagar-cuota-id').value;
+      const tipo = document.getElementById('in-pagar-cuota-tipo').value;
+      const monto = document.getElementById('in-pagar-cuota-monto').value;
+      const metodo = document.getElementById('in-pagar-cuota-metodo').value;
+
+      const success = await DataService.pagarCuotaDeuda(id, tipo, monto, metodo);
+      if (success) {
+        document.getElementById('modal-pagar-cuota').classList.add('hidden');
+      }
     }
 
     // --- TRASPASO ENTRE CUENTAS ---
@@ -1049,13 +1144,13 @@
     }
 
     // Limpieza forzada de cachés antiguas en el navegador móvil
-    if ('caches' in window && localStorage.getItem('CFP_CACHE_PURGED_V6') !== 'true') {
+    if ('caches' in window && localStorage.getItem('CFP_CACHE_PURGED_V7') !== 'true') {
       caches.keys().then(keys => {
         return Promise.all(keys.map(k => {
-          if (k !== 'cfp-cache-v6') return caches.delete(k);
+          if (k !== 'cfp-cache-v7') return caches.delete(k);
         }));
       }).then(() => {
-        localStorage.setItem('CFP_CACHE_PURGED_V6', 'true');
+        localStorage.setItem('CFP_CACHE_PURGED_V7', 'true');
         console.log('🧹 Cachés obsoletas eliminadas del dispositivo');
       });
     }
@@ -1063,7 +1158,7 @@
     // Registro de Service Worker para PWA / TWA con auto-actualización forzada
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js?v=6')
+        navigator.serviceWorker.register('/sw.js?v=7')
           .then(reg => {
             console.log('✅ Service Worker PWA registrado:', reg.scope);
             reg.update();

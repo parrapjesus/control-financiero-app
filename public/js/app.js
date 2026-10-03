@@ -608,29 +608,64 @@ const DataService = {
     UI.showNotification('Deuda actualizada correctamente', 'success');
   },
 
-  async pagarCuotaDeuda(id, tipo) {
+  async pagarCuotaDeuda(id, tipo, montoAbonado, metodoDebitado) {
     const lista = tipo === 'tarjeta' ? AppState.data.tarjetas : AppState.data.prestamos;
     const item = lista.find(d => d.id === id);
-    if (!item) return;
+    if (!item) return false;
 
     if (item.cuotas_pagadas < item.cuotas_totales) {
+      const valMonto = (montoAbonado !== undefined && montoAbonado !== null && !isNaN(parseFloat(montoAbonado)))
+        ? parseFloat(montoAbonado)
+        : parseFloat(item.monto_cuota || 0);
+
+      const bancoDebito = metodoDebitado || item.metodo || 'Santander';
+
       item.cuotas_pagadas += 1;
 
       const client = SupabaseConfig.client;
-      if (client && SupabaseConfig.isConfigured()) {
-        await client.from('deudas').update({
-          cuotas_pagadas: item.cuotas_pagadas
-        }).eq('id', id);
-      } else {
-        DataService.saveToLocalStorage();
+      const isSupa = client && SupabaseConfig.isConfigured();
+
+      if (isSupa) {
+        try {
+          await client.from('deudas').update({
+            cuotas_pagadas: item.cuotas_pagadas
+          }).eq('id', id);
+        } catch (e) {
+          console.error('Error actualizando cuotas en deudas:', e);
+        }
       }
 
+      // 1. Descontar o ajustar cuenta en AppState.data.ingresos
+      if (valMonto > 0 && bancoDebito) {
+        const cuenta = AppState.data.ingresos.find(i => (i.metodo || '').toLowerCase() === bancoDebito.toLowerCase());
+        if (cuenta) {
+          const nuevoMonto = Math.max(0, parseFloat(cuenta.monto || 0) - valMonto);
+          cuenta.monto = nuevoMonto;
+          if (isSupa) {
+            try {
+              await client.from('ingresos').update({ monto: nuevoMonto }).eq('id', cuenta.id);
+            } catch (e) {
+              console.error('Error descontando cuota de cuenta bancaria:', e);
+            }
+          }
+        }
+      }
+
+      DataService.saveToLocalStorage();
+
       const nombre = item.compra || item.prestamo;
-      await DataService.logHistorial(`Cuota ${tipo}`, `Pago cuota ${item.cuotas_pagadas}/${item.cuotas_totales} de ${nombre}`, item.monto_cuota, item.metodo);
-      
+      await DataService.logHistorial(
+        `Cuota ${tipo}`,
+        `Pago cuota ${item.cuotas_pagadas}/${item.cuotas_totales} de ${nombre}`,
+        valMonto,
+        bancoDebito
+      );
+
       UI.renderAll();
-      UI.showNotification(`Cuota ${item.cuotas_pagadas}/${item.cuotas_totales} abonada`, 'success');
+      UI.showNotification(`Cuota ${item.cuotas_pagadas}/${item.cuotas_totales} abonada (${UI.formatCurrency(valMonto)} de ${bancoDebito})`, 'success');
+      return true;
     }
+    return false;
   },
 
   async deleteDeuda(id, tipo) {
@@ -796,11 +831,25 @@ const Calculations = {
     });
 
     const cuotasTarjetas = AppState.data.tarjetas.reduce((sum, t) => {
-      return (t.cuotas_pagadas < t.cuotas_totales) ? sum + (parseFloat(t.monto_cuota) || 0) : sum;
+      if ((t.cuotas_pagadas || 0) >= t.cuotas_totales) return sum;
+      const nombre = (t.compra || '').toLowerCase().trim();
+      const yaPagadaEsteMes = AppState.data.historial.some(h =>
+        (h.categoria || '').toLowerCase().includes('cuota') &&
+        Calculations.isCurrentMonth(h.fecha) &&
+        (h.descripcion || '').toLowerCase().includes(nombre)
+      );
+      return yaPagadaEsteMes ? sum : sum + (parseFloat(t.monto_cuota) || 0);
     }, 0);
 
     const cuotasPrestamos = AppState.data.prestamos.reduce((sum, p) => {
-      return (p.cuotas_pagadas < p.cuotas_totales) ? sum + (parseFloat(p.monto_cuota) || 0) : sum;
+      if ((p.cuotas_pagadas || 0) >= p.cuotas_totales) return sum;
+      const nombre = (p.prestamo || '').toLowerCase().trim();
+      const yaPagadaEsteMes = AppState.data.historial.some(h =>
+        (h.categoria || '').toLowerCase().includes('cuota') &&
+        Calculations.isCurrentMonth(h.fecha) &&
+        (h.descripcion || '').toLowerCase().includes(nombre)
+      );
+      return yaPagadaEsteMes ? sum : sum + (parseFloat(p.monto_cuota) || 0);
     }, 0);
 
     // Saldo real = Ingresos del mes - (Gastos Diarios + Servicios Pagados)
@@ -958,6 +1007,19 @@ const AIAssistant = {
       case 'TRANSFERIR_DINERO':
         if (datos.monto && datos.origen && datos.destino) {
           await DataService.transferirDinero(datos.origen, datos.destino, datos.monto, datos.nota || '');
+        }
+        break;
+
+      case 'PAGAR_CUOTA':
+        if (datos.deuda_nombre) {
+          const list = [
+            ...AppState.data.tarjetas.map(t => ({ ...t, _tipo: 'tarjeta' })),
+            ...AppState.data.prestamos.map(p => ({ ...p, _tipo: 'prestamo' }))
+          ];
+          const found = list.find(d => (d.compra || d.prestamo || '').toLowerCase().includes(datos.deuda_nombre.toLowerCase()));
+          if (found) {
+            await DataService.pagarCuotaDeuda(found.id, found._tipo, datos.monto, datos.metodo);
+          }
         }
         break;
 
@@ -1279,7 +1341,7 @@ const UI = {
                 <span class="text-xs text-slate-400">Total: ${UI.formatCurrency(t.monto_total)}</span>
                 <div class="flex items-center gap-1.5">
                   ${(t.cuotas_pagadas || 0) < t.cuotas_totales ? `
-                    <button onclick="DataService.pagarCuotaDeuda('${t.id}', 'tarjeta')" class="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold rounded-lg text-white transition active:scale-95">
+                    <button onclick="abrirModalPagarCuota('${t.id}', 'tarjeta')" class="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold rounded-lg text-white transition active:scale-95">
                       Pagar Cuota
                     </button>
                   ` : `<span class="text-xs text-emerald-400 font-semibold px-2">Completado</span>`}
@@ -1324,7 +1386,7 @@ const UI = {
                 <span class="text-xs text-slate-400">Total: ${UI.formatCurrency(p.monto_total)}</span>
                 <div class="flex items-center gap-1.5">
                   ${(p.cuotas_pagadas || 0) < p.cuotas_totales ? `
-                    <button onclick="DataService.pagarCuotaDeuda('${p.id}', 'prestamo')" class="px-2.5 py-1 bg-violet-600 hover:bg-violet-500 text-xs font-semibold rounded-lg text-white transition active:scale-95">
+                    <button onclick="abrirModalPagarCuota('${p.id}', 'prestamo')" class="px-2.5 py-1 bg-violet-600 hover:bg-violet-500 text-xs font-semibold rounded-lg text-white transition active:scale-95">
                       Pagar Cuota
                     </button>
                   ` : `<span class="text-xs text-emerald-400 font-semibold px-2">Cancelado</span>`}
