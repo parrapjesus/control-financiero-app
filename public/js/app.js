@@ -733,17 +733,27 @@ const DataService = {
       }
     }
 
-    // 2. Calcular diferencia de saldo actual vs objetivo
+    // 2. Calcular diferencia de saldo actual vs objetivo y ajustar la cuenta bancaria correspondiente
     const metrics = Calculations.getMetrics();
     const diferencia = objetivo - metrics.saldoReal;
 
     if (Math.abs(diferencia) >= 0.01) {
-      if (diferencia > 0) {
-        // Falta dinero registrado -> Añadir como ajuste de ingreso
-        await DataService.addIngreso(motivoFinal, diferencia, metodoFinal);
+      const cuenta = AppState.data.ingresos.find(i => (i.metodo || '').toLowerCase() === metodoFinal.toLowerCase())
+        || AppState.data.ingresos.find(i => (i.metodo || '').toLowerCase().includes('santander'))
+        || AppState.data.ingresos[0];
+
+      if (cuenta) {
+        cuenta.monto = Math.max(0, parseFloat(cuenta.monto || 0) + diferencia);
+        const client = SupabaseConfig.client;
+        if (client && SupabaseConfig.isConfigured()) {
+          try {
+            await client.from('ingresos').update({ monto: cuenta.monto }).eq('id', cuenta.id);
+          } catch (e) {
+            console.error('Error actualizando cuenta en reconciliación:', e);
+          }
+        }
       } else {
-        // Hay menos dinero en mano -> Añadir como gasto diario de ajuste no anotado
-        await DataService.addGastoDiario(motivoFinal, Math.abs(diferencia), metodoFinal);
+        await DataService.addIngreso(motivoFinal, Math.max(0, objetivo), metodoFinal);
       }
     }
 
@@ -811,8 +821,8 @@ const Calculations = {
   },
 
   getMetrics() {
+    // Total fondos registrados en cuentas y bancos del usuario
     const totalIngresos = AppState.data.ingresos
-      .filter(i => Calculations.isCurrentMonth(i.fecha))
       .reduce((sum, i) => sum + (parseFloat(i.monto) || 0), 0);
 
     const totalGastosDiarios = AppState.data.diarios
@@ -852,10 +862,10 @@ const Calculations = {
       return yaPagadaEsteMes ? sum : sum + (parseFloat(p.monto_cuota) || 0);
     }, 0);
 
-    // Saldo real = Ingresos del mes - (Gastos Diarios + Servicios Pagados)
-    const saldoReal = totalIngresos - (totalGastosDiarios + totalServiciosPagados);
+    // Saldo real disponible = Dinero real actual en todas las cuentas y bancos registrados
+    const saldoReal = totalIngresos;
 
-    // Saldo proyectado al final del mes (descontando pendientes y cuotas)
+    // Saldo proyectado al final del mes = Dinero en mano menos obligaciones pendientes
     const saldoProyectado = saldoReal - (totalServiciosPendientes + cuotasTarjetas + cuotasPrestamos);
 
     return {

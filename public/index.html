@@ -107,7 +107,7 @@
               <span id="metric-saldo-real">$0</span>
               <i class="fa-solid fa-pen-to-square text-xs opacity-50 group-hover:opacity-100 text-emerald-400"></i>
             </div>
-            <p class="text-xs text-slate-400 mt-1">Saldo en mano descontando gastos pagados de este mes</p>
+            <p class="text-xs text-slate-400 mt-1">Dinero real disponible en tus cuentas y bancos</p>
             <button onclick="abrirModalAjustarSaldo()" class="mt-2.5 px-3 py-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 rounded-xl text-xs font-bold flex items-center gap-1.5 transition active:scale-95 shadow-sm">
               <i class="fa-solid fa-sliders"></i> Ajustar Capital / Saldo Real
             </button>
@@ -838,8 +838,8 @@
   <div id="toast-notification" class="fixed bottom-20 left-1/2 -translate-x-1/2 px-5 py-2.5 rounded-full text-xs font-semibold text-white shadow-xl opacity-0 pointer-events-none transition-all duration-300 z-50"></div>
 
   <!-- App Scripts -->
-  <script src="/js/supabase-config.js?v=7"></script>
-  <script src="/js/app.js?v=7"></script>
+  <script src="/js/supabase-config.js?v=8"></script>
+  <script src="/js/app.js?v=8"></script>
   <script>
     function submitIngreso() {
       const desc = document.getElementById('in-ingreso-desc').value;
@@ -1144,13 +1144,13 @@
     }
 
     // Limpieza forzada de cachés antiguas en el navegador móvil
-    if ('caches' in window && localStorage.getItem('CFP_CACHE_PURGED_V7') !== 'true') {
+    if ('caches' in window && localStorage.getItem('CFP_CACHE_PURGED_V8') !== 'true') {
       caches.keys().then(keys => {
         return Promise.all(keys.map(k => {
-          if (k !== 'cfp-cache-v7') return caches.delete(k);
+          if (k !== 'cfp-cache-v8') return caches.delete(k);
         }));
       }).then(() => {
-        localStorage.setItem('CFP_CACHE_PURGED_V7', 'true');
+        localStorage.setItem('CFP_CACHE_PURGED_V8', 'true');
         console.log('🧹 Cachés obsoletas eliminadas del dispositivo');
       });
     }
@@ -1158,7 +1158,7 @@
     // Registro de Service Worker para PWA / TWA con auto-actualización forzada
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js?v=7')
+        navigator.serviceWorker.register('/sw.js?v=8')
           .then(reg => {
             console.log('✅ Service Worker PWA registrado:', reg.scope);
             reg.update();
