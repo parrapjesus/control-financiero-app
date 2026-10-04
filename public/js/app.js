@@ -33,7 +33,7 @@ function getTodayString() {
 
 const DataService = {
   // Carga inicial de datos
-  async loadAllData() {
+  async loadAllData(silent = false) {
     let client = SupabaseConfig.client;
     if (!client && SupabaseConfig.isConfigured()) {
       client = SupabaseConfig.init();
@@ -105,7 +105,7 @@ const DataService = {
           AppState.data.metodos = metodos.map(m => m.nombre);
         }
 
-        UI.showNotification('Datos sincronizados con Supabase', 'success');
+        if (!silent) UI.showNotification('Datos sincronizados con Supabase', 'success');
       } catch (error) {
         console.error('Error al cargar datos desde Supabase:', error);
         UI.showNotification('Error al conectar con Supabase. Usando datos locales.', 'error');
@@ -329,32 +329,94 @@ const DataService = {
   },
 
   // -------------------------------------------------------------
+  // SALDO DE CUENTAS (núcleo del modelo "billetera")
+  // Toda salida o entrada de plata ajusta la cuenta/banco correspondiente.
+  // delta negativo = sale plata, delta positivo = entra plata.
+  // Devuelve true si encontró una cuenta con ese método; false si no
+  // (ej: TDC / Mercado Crédito, que son crédito y no restan de tus bancos).
+  // -------------------------------------------------------------
+  async ajustarCuenta(metodo, delta) {
+    const valDelta = parseFloat(delta);
+    if (!metodo || isNaN(valDelta) || valDelta === 0) return false;
+    const met = String(metodo).trim().toLowerCase();
+
+    const candidatas = AppState.data.ingresos.filter(i => (i.metodo || '').trim().toLowerCase() === met);
+    if (candidatas.length === 0) return false;
+
+    // Si hay varias filas del mismo banco, usar la de mayor saldo
+    const cuenta = candidatas.reduce((a, b) => (parseFloat(b.monto) || 0) > (parseFloat(a.monto) || 0) ? b : a);
+
+    const client = SupabaseConfig.client;
+    const isSupa = client && SupabaseConfig.isConfigured();
+    let base = parseFloat(cuenta.monto) || 0;
+
+    if (isSupa) {
+      // Leer el valor fresco del servidor para no pisar cambios hechos desde Google Sheets
+      try {
+        const { data } = await client.from('ingresos').select('monto').eq('id', cuenta.id).single();
+        if (data && data.monto !== undefined && data.monto !== null) base = parseFloat(data.monto) || 0;
+      } catch (e) {
+        console.warn('No se pudo leer saldo fresco, usando el local:', e);
+      }
+    }
+
+    const nuevoMonto = Math.round((base + valDelta) * 100) / 100;
+    cuenta.monto = nuevoMonto;
+
+    if (isSupa) {
+      try {
+        await client.from('ingresos').update({ monto: nuevoMonto }).eq('id', cuenta.id);
+      } catch (e) {
+        console.error('Error actualizando saldo de cuenta:', e);
+      }
+    }
+    DataService.saveToLocalStorage();
+    return true;
+  },
+
+  // -------------------------------------------------------------
   // GASTOS DIARIOS
   // -------------------------------------------------------------
   async addGastoDiario(descripcion, monto, metodo, fecha) {
     const fechaVal = fecha || getTodayString();
+    const valMonto = parseFloat(monto);
+    if (!descripcion || isNaN(valMonto) || valMonto <= 0) {
+      UI.showNotification('Ingresa una descripción y un monto válido', 'warning');
+      return false;
+    }
     const client = SupabaseConfig.client;
 
     if (client && SupabaseConfig.isConfigured()) {
       const { data, error } = await client.from('gastos_diarios').insert([{
         descripcion,
-        monto: parseFloat(monto),
+        monto: valMonto,
         metodo,
         fecha: fechaVal
       }]).select();
 
-      if (!error && data && data[0]) {
-        AppState.data.diarios.unshift({ ...data[0], monto: parseFloat(data[0].monto) });
+      if (error || !data || !data[0]) {
+        console.error('Error guardando gasto:', error);
+        UI.showNotification('No se pudo guardar el gasto. Revisa tu conexión.', 'error');
+        return false;
       }
+      AppState.data.diarios.unshift({ ...data[0], monto: parseFloat(data[0].monto) });
     } else {
-      const nuevo = { id: Date.now().toString(), descripcion, monto: parseFloat(monto), metodo, fecha: fechaVal };
+      const nuevo = { id: Date.now().toString(), descripcion, monto: valMonto, metodo, fecha: fechaVal };
       AppState.data.diarios.unshift(nuevo);
       DataService.saveToLocalStorage();
     }
 
-    await DataService.logHistorial('Gasto Diario', descripcion, monto, metodo);
+    // Descontar la plata de la cuenta/banco con que se pagó
+    const descontado = await DataService.ajustarCuenta(metodo, -valMonto);
+
+    await DataService.logHistorial('Gasto Diario', descripcion, valMonto, metodo);
     UI.renderAll();
-    UI.showNotification('Gasto diario registrado', 'success');
+    if (descontado) {
+      UI.showNotification(`Gasto registrado y descontado de ${metodo}`, 'success');
+    } else {
+      UI.showNotification(`Gasto registrado. "${metodo}" no tiene saldo cargado, no se restó de tus cuentas`, 'info');
+    }
+    return true;
   },
 
   async deleteGastoDiario(id) {
@@ -369,10 +431,12 @@ const DataService = {
     DataService.saveToLocalStorage();
 
     if (item) {
+      // Devolver la plata a la cuenta de donde había salido
+      await DataService.ajustarCuenta(item.metodo, parseFloat(item.monto) || 0);
       await DataService.logHistorial('Eliminación Gasto', item.descripcion, -item.monto, item.metodo);
     }
     UI.renderAll();
-    UI.showNotification('Gasto eliminado', 'info');
+    UI.showNotification('Gasto eliminado y plata devuelta a la cuenta', 'info');
   },
 
   // -------------------------------------------------------------
@@ -414,24 +478,45 @@ const DataService = {
     if (!serv) return;
 
     const nuevoEstado = serv.estado === 'Pagado' ? 'Pendiente' : 'Pagado';
+    const monto = parseFloat(serv.monto) || 0;
+
+    // Banco con que se paga: el indicado, o tu cuenta principal (Santander o la de mayor saldo)
+    let metodoPago = metodo && metodo !== 'General' ? metodo : null;
+    if (nuevoEstado === 'Pagado' && !metodoPago) {
+      const principal = AppState.data.ingresos.find(i => (i.metodo || '').toLowerCase() === 'santander')
+        || [...AppState.data.ingresos].sort((a, b) => (parseFloat(b.monto) || 0) - (parseFloat(a.monto) || 0))[0];
+      metodoPago = principal ? principal.metodo : 'General';
+    }
+    const metodoAnterior = serv.metodo_pago;
+
     serv.estado = nuevoEstado;
+    serv.metodo_pago = nuevoEstado === 'Pagado' ? metodoPago : null;
+    serv.fecha_pago = nuevoEstado === 'Pagado' ? getTodayString() : null;
 
     const client = SupabaseConfig.client;
     if (client && SupabaseConfig.isConfigured()) {
       await client.from('gastos_fijos').update({
         estado: nuevoEstado,
-        fecha_pago: nuevoEstado === 'Pagado' ? new Date().toISOString() : null,
-        metodo_pago: nuevoEstado === 'Pagado' ? (metodo || 'General') : null
+        fecha_pago: serv.fecha_pago,
+        metodo_pago: serv.metodo_pago
       }).eq('id', id);
-    } else {
-      DataService.saveToLocalStorage();
     }
+    DataService.saveToLocalStorage();
 
     if (nuevoEstado === 'Pagado') {
-      await DataService.logHistorial('Servicio Pagado', serv.servicio, serv.monto, metodo || 'General');
-      UI.showNotification(`"${serv.servicio}" marcado como Pagado`, 'success');
+      const descontado = await DataService.ajustarCuenta(metodoPago, -monto);
+      await DataService.logHistorial('Servicio Pagado', serv.servicio, monto, metodoPago);
+      UI.showNotification(
+        descontado ? `"${serv.servicio}" pagado y descontado de ${metodoPago}` : `"${serv.servicio}" marcado como Pagado`,
+        'success'
+      );
     } else {
-      UI.showNotification(`"${serv.servicio}" marcado como Pendiente`, 'info');
+      // Revertir: devolver la plata a la cuenta de donde salió (si era una cuenta con saldo)
+      const devuelto = await DataService.ajustarCuenta(metodoAnterior, monto);
+      if (devuelto) {
+        await DataService.logHistorial('Reverso Servicio', serv.servicio, -monto, metodoAnterior);
+      }
+      UI.showNotification(`"${serv.servicio}" marcado como Pendiente${devuelto ? ` (se devolvió a ${metodoAnterior})` : ''}`, 'info');
     }
 
     UI.renderAll();
@@ -635,20 +720,9 @@ const DataService = {
         }
       }
 
-      // 1. Descontar o ajustar cuenta en AppState.data.ingresos
+      // 1. Descontar la cuota de la cuenta/banco con que se pagó
       if (valMonto > 0 && bancoDebito) {
-        const cuenta = AppState.data.ingresos.find(i => (i.metodo || '').toLowerCase() === bancoDebito.toLowerCase());
-        if (cuenta) {
-          const nuevoMonto = Math.max(0, parseFloat(cuenta.monto || 0) - valMonto);
-          cuenta.monto = nuevoMonto;
-          if (isSupa) {
-            try {
-              await client.from('ingresos').update({ monto: nuevoMonto }).eq('id', cuenta.id);
-            } catch (e) {
-              console.error('Error descontando cuota de cuenta bancaria:', e);
-            }
-          }
-        }
+        await DataService.ajustarCuenta(bancoDebito, -valMonto);
       }
 
       DataService.saveToLocalStorage();
@@ -1558,6 +1632,16 @@ const UI = {
 window.addEventListener('DOMContentLoaded', () => {
   DataService.loadAllData();
   AIAssistant.initVoice();
+
+  // Al volver a la app (desde otra app o pestaña), refrescar datos del servidor
+  // para no trabajar con saldos viejos si Spark / Google Sheets cargó algo mientras tanto.
+  let ultimaRecarga = Date.now();
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && Date.now() - ultimaRecarga > 30000) {
+      ultimaRecarga = Date.now();
+      DataService.loadAllData(true);
+    }
+  });
 
   // Navegación
   document.querySelectorAll('.nav-btn').forEach(btn => {
