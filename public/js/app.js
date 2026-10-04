@@ -1,6 +1,6 @@
 // ==============================================================================
 // CONTROL FINANCIERO PRO - MOTOR PRINCIPAL DE LA APLICACIÓN (app.js)
-// Conectado a Supabase (PostgreSQL + Storage) y Vercel Serverless (Gemini AI)
+// Conectado a Supabase (PostgreSQL + Storage)
 // ==============================================================================
 
 const AppState = {
@@ -14,9 +14,7 @@ const AppState = {
     metodos: ['Efectivo', 'Mercado Pago', 'Transferencia', 'Tarjeta de Crédito', 'Mercado Crédito']
   },
   currentTab: 'dashboard',
-  chartInstance: null,
-  isRecording: false,
-  recognition: null
+  chartInstance: null
 };
 
 function getTodayString() {
@@ -957,217 +955,7 @@ const Calculations = {
 };
 
 // ==============================================================================
-// 3. ASISTENTE INTELIGENTE CON GOOGLE GEMINI AI
-// ==============================================================================
-
-const AIAssistant = {
-  async processPrompt(promptText) {
-    if (!promptText || !promptText.trim()) return;
-
-    UI.appendChatMessage('user', promptText);
-    UI.setAILoading(true);
-
-    try {
-      const metrics = Calculations.getMetrics();
-      const context = `DATOS ACTUALES:
-- Saldo Real: $${Math.round(metrics.saldoReal)}
-- Ingresos Mes: $${Math.round(metrics.totalIngresos)}
-- Gastos Diarios: $${Math.round(metrics.totalGastosDiarios)}
-- Servicios Pendientes: ${JSON.stringify(AppState.data.servicios.filter(s => s.estado !== 'Pagado'))}
-- Tarjetas: ${JSON.stringify(AppState.data.tarjetas)}
-- Métodos de pago disponibles: ${AppState.data.metodos.join(', ')}`;
-
-      let responseData;
-
-      // 1. Intentar llamar al Serverless Function de Vercel (/api/gemini)
-      try {
-        const customApiKey = localStorage.getItem('CFP_GEMINI_API_KEY') || '';
-        const res = await fetch('/api/gemini', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            prompt: promptText,
-            financialContext: context,
-            apiKey: customApiKey
-          })
-        });
-
-        if (res.ok) {
-          responseData = await res.json();
-        } else {
-          throw new Error(`Servidor Vercel respondió con estado: ${res.status}`);
-        }
-      } catch (serverErr) {
-        console.warn('Fallo serverless /api/gemini, intentando llamada directa con clave guardada:', serverErr);
-        // Fallback directo a Google Gemini API si hay API key local
-        const customApiKey = localStorage.getItem('CFP_GEMINI_API_KEY');
-        if (!customApiKey) throw new Error('Configura tu GEMINI_API_KEY en los Ajustes o en Vercel.');
-
-        responseData = await AIAssistant.directGeminiCall(promptText, context, customApiKey);
-      }
-
-      // 2. Ejecutar la acción interpretada
-      await AIAssistant.executeAction(responseData);
-
-      // 3. Mostrar respuesta al usuario
-      UI.appendChatMessage('assistant', responseData.mensaje_usuario || 'Entendido, he procesado tu solicitud.');
-    } catch (err) {
-      console.error('Error en Asistente IA:', err);
-      UI.appendChatMessage('assistant', `⚠️ Ocurrió un inconveniente: ${err.message}`);
-    } finally {
-      UI.setAILoading(false);
-    }
-  },
-
-  async directGeminiCall(promptText, context, apiKey) {
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-    const payload = {
-      contents: [{ parts: [{ text: promptText }] }],
-      systemInstruction: { parts: [{ text: `Eres el Asistente Financiero Pro. Interpreta el mensaje y responde en JSON puro con las llaves: tipo_accion, datos, mensaje_usuario.\n${context}` }] },
-      generationConfig: { responseMimeType: "application/json" }
-    };
-    const res = await fetch(apiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    const data = await res.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-    return JSON.parse(text.replace(/^```json\s*/i, '').replace(/\s*```$/i, ''));
-  },
-
-  async executeAction(actionObj) {
-    if (!actionObj || !actionObj.tipo_accion) return;
-
-    const { tipo_accion, datos } = actionObj;
-
-    switch (tipo_accion) {
-      case 'REGISTRAR_DIARIO':
-        if (datos.monto) {
-          await DataService.addGastoDiario(datos.descripcion || 'Gasto vario', datos.monto, datos.metodo || 'Efectivo');
-        }
-        break;
-
-      case 'REGISTRAR_INGRESO':
-        if (datos.monto) {
-          await DataService.addIngreso(datos.descripcion || 'Ingreso vario', datos.monto, datos.metodo || 'Transferencia');
-        }
-        break;
-
-      case 'REGISTRAR_SERVICIO':
-        if (datos.monto && datos.descripcion) {
-          await DataService.addServicio(datos.descripcion, datos.monto, datos.vencimiento || 10);
-        }
-        break;
-
-      case 'REGISTRAR_DEUDA':
-        if (datos.monto && datos.descripcion) {
-          await DataService.addDeuda(datos.tipo_deuda || 'tarjeta', datos.descripcion, datos.monto, datos.cuotas || 1, datos.metodo);
-        }
-        break;
-
-      case 'PAGAR_SERVICIOS':
-        if (datos.servicios_a_pagar && Array.isArray(datos.servicios_a_pagar)) {
-          for (const servNom of datos.servicios_a_pagar) {
-            const found = AppState.data.servicios.find(s => s.servicio.toLowerCase().includes(servNom.toLowerCase()));
-            if (found && found.estado !== 'Pagado') {
-              await DataService.toggleServicio(found.id, datos.metodo || 'General');
-            }
-          }
-        }
-        break;
-
-      case 'RECONCILIAR_SALDO':
-        if (datos.saldo_real_objetivo !== undefined && datos.saldo_real_objetivo !== null) {
-          await DataService.reconciliarSaldo(
-            datos.saldo_real_objetivo,
-            datos.marcar_servicios_pagados !== false,
-            datos.servicios_excluidos || [],
-            datos.metodo || 'General'
-          );
-        }
-        break;
-
-      case 'TRANSFERIR_DINERO':
-        if (datos.monto && datos.origen && datos.destino) {
-          await DataService.transferirDinero(datos.origen, datos.destino, datos.monto, datos.nota || '');
-        }
-        break;
-
-      case 'PAGAR_CUOTA':
-        if (datos.deuda_nombre) {
-          const list = [
-            ...AppState.data.tarjetas.map(t => ({ ...t, _tipo: 'tarjeta' })),
-            ...AppState.data.prestamos.map(p => ({ ...p, _tipo: 'prestamo' }))
-          ];
-          const found = list.find(d => (d.compra || d.prestamo || '').toLowerCase().includes(datos.deuda_nombre.toLowerCase()));
-          if (found) {
-            await DataService.pagarCuotaDeuda(found.id, found._tipo, datos.monto, datos.metodo);
-          }
-        }
-        break;
-
-      case 'ANALISIS':
-      default:
-        // No requiere mutación de base de datos
-        break;
-    }
-  },
-
-  // Inicializar Web Speech Recognition
-  initVoice() {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      console.warn('Reconocimiento de voz no soportado en este navegador.');
-      return;
-    }
-
-    AppState.recognition = new SpeechRecognition();
-    AppState.recognition.lang = 'es-AR';
-    AppState.recognition.continuous = false;
-    AppState.recognition.interimResults = false;
-
-    AppState.recognition.onstart = () => {
-      AppState.isRecording = true;
-      UI.updateMicButton(true);
-    };
-
-    AppState.recognition.onresult = (event) => {
-      const transcript = event.results[0][0].transcript;
-      const input = document.getElementById('ai-input-text');
-      if (input) input.value = transcript;
-      AIAssistant.processPrompt(transcript);
-    };
-
-    AppState.recognition.onerror = (event) => {
-      console.error('Error de voz:', event.error);
-      AppState.isRecording = false;
-      UI.updateMicButton(false);
-    };
-
-    AppState.recognition.onend = () => {
-      AppState.isRecording = false;
-      UI.updateMicButton(false);
-    };
-  },
-
-  toggleVoice() {
-    if (!AppState.recognition) AIAssistant.initVoice();
-    if (!AppState.recognition) {
-      UI.showNotification('Tu navegador no soporta dictado por voz.', 'warning');
-      return;
-    }
-
-    if (AppState.isRecording) {
-      AppState.recognition.stop();
-    } else {
-      AppState.recognition.start();
-    }
-  }
-};
-
-// ==============================================================================
-// 4. INTERFAZ DE USUARIO Y RENDERIZADO (UI)
+// 3. INTERFAZ DE USUARIO Y RENDERIZADO (UI)
 // ==============================================================================
 
 const UI = {
@@ -1575,38 +1363,6 @@ const UI = {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   },
 
-  appendChatMessage(sender, text) {
-    const container = document.getElementById('chat-messages');
-    if (!container) return;
-
-    const isUser = sender === 'user';
-    const msgDiv = document.createElement('div');
-    msgDiv.className = `flex gap-3 ${isUser ? 'justify-end' : 'justify-start'} animate-fade-in`;
-    msgDiv.innerHTML = `
-      ${!isUser ? `<div class="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-white shrink-0 text-xs"><i class="fa-solid fa-wand-magic-sparkles"></i></div>` : ''}
-      <div class="max-w-[85%] md:max-w-[70%] p-3.5 rounded-2xl text-sm ${isUser ? 'bg-indigo-600 text-white rounded-br-none' : 'bg-slate-800 text-slate-200 border border-slate-700 rounded-bl-none'}">
-        ${text}
-      </div>
-      ${isUser ? `<div class="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-white shrink-0 text-xs"><i class="fa-solid fa-user"></i></div>` : ''}
-    `;
-    container.appendChild(msgDiv);
-    container.scrollTop = container.scrollHeight;
-  },
-
-  setAILoading(loading) {
-    const indicator = document.getElementById('ai-loading-indicator');
-    if (indicator) indicator.classList.toggle('hidden', !loading);
-  },
-
-  updateMicButton(recording) {
-    const micBtn = document.getElementById('btn-voice-mic');
-    if (micBtn) {
-      micBtn.classList.toggle('bg-rose-600', recording);
-      micBtn.classList.toggle('animate-pulse', recording);
-      micBtn.classList.toggle('bg-slate-700', !recording);
-    }
-  },
-
   showNotification(message, type = 'info') {
     const banner = document.getElementById('toast-notification');
     if (!banner) return;
@@ -1626,12 +1382,11 @@ const UI = {
 };
 
 // ==============================================================================
-// 5. EVENT LISTENERS E INICIALIZACIÓN
+// 4. EVENT LISTENERS E INICIALIZACIÓN
 // ==============================================================================
 
 window.addEventListener('DOMContentLoaded', () => {
   DataService.loadAllData();
-  AIAssistant.initVoice();
 
   // Al volver a la app (desde otra app o pestaña), refrescar datos del servidor
   // para no trabajar con saldos viejos si Spark / Google Sheets cargó algo mientras tanto.
@@ -1648,26 +1403,10 @@ window.addEventListener('DOMContentLoaded', () => {
     btn.addEventListener('click', () => UI.switchTab(btn.dataset.tab));
   });
 
-  // Chat AI
-  const chatForm = document.getElementById('ai-chat-form');
-  const chatInput = document.getElementById('ai-input-text');
-  if (chatForm && chatInput) {
-    chatForm.addEventListener('submit', (e) => {
-      e.preventDefault();
-      const val = chatInput.value.trim();
-      if (val) {
-        chatInput.value = '';
-        AIAssistant.processPrompt(val);
-      }
-    });
-  }
-
   // Cargar Ajustes guardados
   const inputSupabaseUrl = document.getElementById('setting-supabase-url');
   const inputSupabaseKey = document.getElementById('setting-supabase-key');
-  const inputGeminiKey = document.getElementById('setting-gemini-key');
 
   if (inputSupabaseUrl) inputSupabaseUrl.value = SupabaseConfig.getUrl();
   if (inputSupabaseKey) inputSupabaseKey.value = SupabaseConfig.getKey();
-  if (inputGeminiKey) inputGeminiKey.value = localStorage.getItem('CFP_GEMINI_API_KEY') || '';
 });

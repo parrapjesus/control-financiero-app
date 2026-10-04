@@ -150,22 +150,35 @@
           </div>
         </div>
 
-        <!-- Voice / AI Quick Prompt -->
-        <div class="glass-panel rounded-3xl p-6 flex flex-col justify-between">
+        <!-- Acciones Rápidas -->
+        <div class="glass-panel rounded-3xl p-6 flex flex-col justify-between space-y-4">
           <div>
-            <h3 class="text-sm font-bold text-white mb-2 flex items-center gap-2">
-              <i class="fa-solid fa-wand-magic-sparkles text-indigo-400"></i> Asistente de Voz / IA
+            <h3 class="text-sm font-bold text-white mb-1.5 flex items-center gap-2">
+              <div class="w-8 h-8 rounded-xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center">
+                <i class="fa-solid fa-bolt"></i>
+              </div>
+              Acciones Rápidas
             </h3>
-            <p class="text-xs text-slate-400 mb-4">
-              Dicta o escribe tus transacciones en lenguaje coloquial. Ej: <i>"Gasté 5000 en verdulería con MP"</i> o <i>"Pagué el internet y me quedaron 80.000 pesos"</i>.
+            <p class="text-xs text-slate-400">
+              Registra movimientos o gestiona tus cuentas con un solo toque.
             </p>
           </div>
-          <div class="space-y-3">
-            <button onclick="UI.switchTab('ai')" class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 rounded-2xl text-sm font-bold text-white flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/30 transition">
-              <i class="fa-solid fa-microphone"></i> Abrir Asistente Inteligente
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <button onclick="document.getElementById('modal-add-gasto').classList.remove('hidden')" class="w-full py-3 px-3.5 bg-rose-600 hover:bg-rose-500 rounded-2xl text-xs font-bold text-white flex items-center justify-center gap-2 shadow-lg shadow-rose-600/30 transition active:scale-95">
+              <i class="fa-solid fa-plus"></i> Registrar Gasto Diario
             </button>
-            <button onclick="abrirModalAjustarSaldo()" class="w-full py-2.5 bg-slate-800 hover:bg-slate-700 rounded-2xl text-xs font-semibold text-slate-300 border border-slate-700 transition flex items-center justify-center gap-2">
-              <i class="fa-solid fa-sliders"></i> Ajustar / Reconciliar Saldo
+
+            <button onclick="abrirModalTransferirDinero()" class="w-full py-3 px-3.5 bg-blue-600 hover:bg-blue-500 rounded-2xl text-xs font-bold text-white flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30 transition active:scale-95">
+              <i class="fa-solid fa-right-left"></i> Mover Dinero
+            </button>
+
+            <button onclick="document.getElementById('modal-add-ingreso').classList.remove('hidden')" class="w-full py-2.5 px-3 bg-slate-800 hover:bg-slate-700 rounded-2xl text-xs font-semibold text-emerald-400 border border-slate-700 transition flex items-center justify-center gap-2 active:scale-95">
+              <i class="fa-solid fa-wallet"></i> Añadir Fondo / Cuenta
+            </button>
+
+            <button onclick="abrirModalAjustarSaldo()" class="w-full py-2.5 px-3 bg-slate-800 hover:bg-slate-700 rounded-2xl text-xs font-semibold text-slate-300 border border-slate-700 transition flex items-center justify-center gap-2 active:scale-95">
+              <i class="fa-solid fa-sliders"></i> Ajustar Saldo Real
             </button>
           </div>
         </div>
@@ -199,53 +212,7 @@
       </div>
     </section>
 
-    <!-- 2. AI ASSISTANT VIEW -->
-    <section id="tab-ai" class="tab-content hidden space-y-4">
-      <div class="glass-panel rounded-3xl p-4 sm:p-6 flex flex-col h-[70vh]">
-        <div class="flex items-center justify-between pb-3 border-b border-slate-800">
-          <div class="flex items-center gap-2.5">
-            <div class="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center text-white">
-              <i class="fa-solid fa-robot"></i>
-            </div>
-            <div>
-              <h3 class="text-sm font-bold text-white">Asistente Gemini 2.0 Flash</h3>
-              <p class="text-xs text-slate-400">Procesamiento de voz y finanzas en tiempo real</p>
-            </div>
-          </div>
-        </div>
-
-        <!-- Chat messages container -->
-        <div id="chat-messages" class="flex-1 overflow-y-auto custom-scrollbar py-4 space-y-3">
-          <div class="flex gap-3 justify-start">
-            <div class="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-white shrink-0 text-xs">
-              <i class="fa-solid fa-wand-magic-sparkles"></i>
-            </div>
-            <div class="max-w-[85%] md:max-w-[70%] p-3.5 rounded-2xl text-sm bg-slate-800 text-slate-200 border border-slate-700 rounded-bl-none">
-              ¡Hola! Estoy listo para ayudarte. Puedes decirme qué compraste, qué servicios pagaste o decirme cuánto dinero te quedó en mano para reconciliar tus cuentas.
-            </div>
-          </div>
-        </div>
-
-        <!-- Loading Indicator -->
-        <div id="ai-loading-indicator" class="hidden flex items-center gap-2 text-xs text-indigo-400 py-2">
-          <i class="fa-solid fa-circle-notch fa-spin"></i>
-          <span>Gemini está analizando tus cuentas...</span>
-        </div>
-
-        <!-- Chat Input Form -->
-        <form id="ai-chat-form" class="flex items-center gap-2 pt-3 border-t border-slate-800">
-          <button type="button" id="btn-voice-mic" onclick="AIAssistant.toggleVoice()" class="w-12 h-12 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 flex items-center justify-center transition shrink-0">
-            <i class="fa-solid fa-microphone text-lg"></i>
-          </button>
-          <input type="text" id="ai-input-text" placeholder="Ej: Gasté 15000 en el súper con Débito..." class="flex-1 bg-slate-900/90 border border-slate-700 rounded-2xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
-          <button type="submit" class="w-12 h-12 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white flex items-center justify-center shrink-0 shadow-md shadow-indigo-600/30 transition">
-            <i class="fa-solid fa-paper-plane"></i>
-          </button>
-        </form>
-      </div>
-    </section>
-
-    <!-- 3. GASTOS DIARIOS VIEW -->
+    <!-- 2. GASTOS DIARIOS VIEW -->
     <section id="tab-diarios" class="tab-content hidden space-y-4">
       <div class="flex items-center justify-between">
         <div>
@@ -367,7 +334,7 @@
             </div>
             <div>
               <h3 class="text-sm font-bold text-white">Sincronización en la Nube</h3>
-              <p class="text-xs text-slate-400">Base de datos PostgreSQL y Asistente IA activos</p>
+              <p class="text-xs text-slate-400">Base de datos PostgreSQL en tiempo real</p>
             </div>
           </div>
           <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
@@ -382,7 +349,6 @@
         <!-- Hidden inputs para compatibilidad con scripts existentes -->
         <input type="hidden" id="setting-supabase-url">
         <input type="hidden" id="setting-supabase-key">
-        <input type="hidden" id="setting-gemini-key">
       </div>
 
       <!-- Métodos de Pago Gestión -->
@@ -412,10 +378,6 @@
           <i class="fa-solid fa-house text-sm mb-0.5"></i>
           <span class="truncate">Inicio</span>
         </button>
-        <button data-tab="ai" class="nav-btn flex flex-col items-center justify-center py-1.5 px-0.5 rounded-2xl text-slate-400 text-[10px] font-medium transition hover:text-white">
-          <i class="fa-solid fa-wand-magic-sparkles text-sm mb-0.5"></i>
-          <span class="truncate">IA</span>
-        </button>
         <button data-tab="diarios" class="nav-btn flex flex-col items-center justify-center py-1.5 px-0.5 rounded-2xl text-slate-400 text-[10px] font-medium transition hover:text-white">
           <i class="fa-solid fa-cart-shopping text-sm mb-0.5"></i>
           <span class="truncate">Diarios</span>
@@ -427,6 +389,10 @@
         <button data-tab="deudas" class="nav-btn flex flex-col items-center justify-center py-1.5 px-0.5 rounded-2xl text-slate-400 text-[10px] font-medium transition hover:text-white">
           <i class="fa-solid fa-credit-card text-sm mb-0.5"></i>
           <span class="truncate">Deudas</span>
+        </button>
+        <button data-tab="historial" class="nav-btn flex flex-col items-center justify-center py-1.5 px-0.5 rounded-2xl text-slate-400 text-[10px] font-medium transition hover:text-white">
+          <i class="fa-solid fa-clock-rotate-left text-sm mb-0.5"></i>
+          <span class="truncate">Historial</span>
         </button>
         <button data-tab="ajustes" class="nav-btn flex flex-col items-center justify-center py-1.5 px-0.5 rounded-2xl text-slate-400 text-[10px] font-medium transition hover:text-white">
           <i class="fa-solid fa-gear text-sm mb-0.5"></i>
@@ -838,8 +804,8 @@
   <div id="toast-notification" class="fixed bottom-20 left-1/2 -translate-x-1/2 px-5 py-2.5 rounded-full text-xs font-semibold text-white shadow-xl opacity-0 pointer-events-none transition-all duration-300 z-50"></div>
 
   <!-- App Scripts -->
-  <script src="/js/supabase-config.js?v=9"></script>
-  <script src="/js/app.js?v=9"></script>
+  <script src="/js/supabase-config.js?v=10"></script>
+  <script src="/js/app.js?v=10"></script>
   <script>
     function submitIngreso() {
       const desc = document.getElementById('in-ingreso-desc').value;
@@ -1135,22 +1101,14 @@
       UI.showNotification('Credenciales de Supabase guardadas', 'success');
     }
 
-    function saveGeminiSettings() {
-      const key = document.getElementById('setting-gemini-key').value;
-      if (key) {
-        localStorage.setItem('CFP_GEMINI_API_KEY', key.trim());
-        UI.showNotification('Clave de Gemini guardada', 'success');
-      }
-    }
-
     // Limpieza forzada de cachés antiguas en el navegador móvil
-    if ('caches' in window && localStorage.getItem('CFP_CACHE_PURGED_V9') !== 'true') {
+    if ('caches' in window && localStorage.getItem('CFP_CACHE_PURGED_V10') !== 'true') {
       caches.keys().then(keys => {
         return Promise.all(keys.map(k => {
-          if (k !== 'cfp-cache-v9') return caches.delete(k);
+          if (k !== 'cfp-cache-v10') return caches.delete(k);
         }));
       }).then(() => {
-        localStorage.setItem('CFP_CACHE_PURGED_V9', 'true');
+        localStorage.setItem('CFP_CACHE_PURGED_V10', 'true');
         console.log('🧹 Cachés obsoletas eliminadas del dispositivo');
       });
     }
@@ -1158,7 +1116,7 @@
     // Registro de Service Worker para PWA / TWA con auto-actualización forzada
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js?v=9')
+        navigator.serviceWorker.register('/sw.js?v=10')
           .then(reg => {
             console.log('✅ Service Worker PWA registrado:', reg.scope);
             reg.update();
