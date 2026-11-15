@@ -2,6 +2,7 @@
 -- CONTROL FINANCIERO PRO - ESQUEMA DE BASE DE DATOS PARA SUPABASE (POSTGRESQL)
 -- ==============================================================================
 -- Ejecuta este script completo en el SQL Editor de tu proyecto en Supabase.
+-- Incluye: Tablas relacionales, Claves Foráneas, Índices, RLS (Seguridad) y Storage.
 -- ==============================================================================
 
 -- 1. Habilitar extensión UUID
@@ -10,8 +11,8 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- 2. TABLA: Métodos de Pago / Billeteras / Bancos
 CREATE TABLE IF NOT EXISTS public.metodos_pago (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID,
-    nombre TEXT NOT NULL UNIQUE,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    nombre TEXT NOT NULL,
     icono TEXT DEFAULT 'wallet',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
@@ -19,7 +20,7 @@ CREATE TABLE IF NOT EXISTS public.metodos_pago (
 -- 3. TABLA: Ingresos
 CREATE TABLE IF NOT EXISTS public.ingresos (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
     descripcion TEXT NOT NULL,
     monto NUMERIC(12, 2) NOT NULL CHECK (monto >= 0),
     fecha DATE NOT NULL DEFAULT CURRENT_DATE,
@@ -30,7 +31,7 @@ CREATE TABLE IF NOT EXISTS public.ingresos (
 -- 4. TABLA: Gastos Diarios
 CREATE TABLE IF NOT EXISTS public.gastos_diarios (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
     descripcion TEXT NOT NULL,
     monto NUMERIC(12, 2) NOT NULL CHECK (monto >= 0),
     fecha DATE NOT NULL DEFAULT CURRENT_DATE,
@@ -41,7 +42,7 @@ CREATE TABLE IF NOT EXISTS public.gastos_diarios (
 -- 5. TABLA: Gastos Fijos y Servicios
 CREATE TABLE IF NOT EXISTS public.gastos_fijos (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
     servicio TEXT NOT NULL,
     monto NUMERIC(12, 2) NOT NULL CHECK (monto >= 0),
     vencimiento INTEGER NOT NULL CHECK (vencimiento >= 1 AND vencimiento <= 31),
@@ -55,7 +56,7 @@ CREATE TABLE IF NOT EXISTS public.gastos_fijos (
 -- 6. TABLA: Deudas (Tarjetas de Crédito y Préstamos)
 CREATE TABLE IF NOT EXISTS public.deudas (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
     tipo TEXT NOT NULL CHECK (tipo IN ('tarjeta', 'prestamo')),
     nombre TEXT NOT NULL,
     monto_total NUMERIC(12, 2) NOT NULL CHECK (monto_total >= 0),
@@ -70,7 +71,7 @@ CREATE TABLE IF NOT EXISTS public.deudas (
 -- 7. TABLA: Historial de Transacciones (Auditoría / Timeline)
 CREATE TABLE IF NOT EXISTS public.historial (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
     fecha TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     categoria TEXT NOT NULL,
     descripcion TEXT NOT NULL,
@@ -78,8 +79,24 @@ CREATE TABLE IF NOT EXISTS public.historial (
     metodo TEXT NOT NULL DEFAULT 'General'
 );
 
+-- 8. TABLA: Inversiones y Patrimonio Futuro
+CREATE TABLE IF NOT EXISTS public.inversiones (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    nombre TEXT NOT NULL,
+    tipo TEXT NOT NULL DEFAULT 'Renta Fija',
+    plataforma TEXT DEFAULT 'General',
+    monto_invertido NUMERIC(12, 2) NOT NULL CHECK (monto_invertido >= 0),
+    valor_actual NUMERIC(12, 2) NOT NULL CHECK (valor_actual >= 0),
+    moneda TEXT NOT NULL DEFAULT 'ARS',
+    rendimiento_pct NUMERIC(6, 2) DEFAULT 0,
+    fecha DATE NOT NULL DEFAULT CURRENT_DATE,
+    notas TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
 -- ==============================================================================
--- HABILITAR RLS CON POLÍTICAS DE ACCESO PARA APP PERSONAL
+-- CONFIGURACIÓN DE ROW LEVEL SECURITY (RLS) - SEGURIDAD MULTI-USUARIO
 -- ==============================================================================
 ALTER TABLE public.metodos_pago ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ingresos ENABLE ROW LEVEL SECURITY;
@@ -87,24 +104,35 @@ ALTER TABLE public.gastos_diarios ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.gastos_fijos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.deudas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.historial ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.inversiones ENABLE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS "Acceso total metodos_pago" ON public.metodos_pago;
-CREATE POLICY "Acceso total metodos_pago" ON public.metodos_pago FOR ALL USING (true) WITH CHECK (true);
+-- Políticas para Metodos de Pago
+CREATE POLICY "Usuarios pueden gestionar sus metodos de pago"
+ON public.metodos_pago FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
-DROP POLICY IF EXISTS "Acceso total ingresos" ON public.ingresos;
-CREATE POLICY "Acceso total ingresos" ON public.ingresos FOR ALL USING (true) WITH CHECK (true);
+-- Políticas para Ingresos
+CREATE POLICY "Usuarios pueden gestionar sus ingresos"
+ON public.ingresos FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
-DROP POLICY IF EXISTS "Acceso total gastos_diarios" ON public.gastos_diarios;
-CREATE POLICY "Acceso total gastos_diarios" ON public.gastos_diarios FOR ALL USING (true) WITH CHECK (true);
+-- Políticas para Gastos Diarios
+CREATE POLICY "Usuarios pueden gestionar sus gastos diarios"
+ON public.gastos_diarios FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
-DROP POLICY IF EXISTS "Acceso total gastos_fijos" ON public.gastos_fijos;
-CREATE POLICY "Acceso total gastos_fijos" ON public.gastos_fijos FOR ALL USING (true) WITH CHECK (true);
+-- Políticas para Gastos Fijos
+CREATE POLICY "Usuarios pueden gestionar sus gastos fijos"
+ON public.gastos_fijos FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
-DROP POLICY IF EXISTS "Acceso total deudas" ON public.deudas;
-CREATE POLICY "Acceso total deudas" ON public.deudas FOR ALL USING (true) WITH CHECK (true);
+-- Políticas para Deudas
+CREATE POLICY "Usuarios pueden gestionar sus deudas"
+ON public.deudas FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
-DROP POLICY IF EXISTS "Acceso total historial" ON public.historial;
-CREATE POLICY "Acceso total historial" ON public.historial FOR ALL USING (true) WITH CHECK (true);
+-- Políticas para Historial
+CREATE POLICY "Usuarios pueden ver y registrar historial"
+ON public.historial FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+
+-- Políticas para Inversiones
+CREATE POLICY "Usuarios pueden gestionar sus inversiones"
+ON public.inversiones FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
 -- ==============================================================================
 -- STORAGE BUCKET PARA COMPROBANTES / VOUCHERS
@@ -113,19 +141,34 @@ INSERT INTO storage.buckets (id, name, public)
 VALUES ('vouchers', 'vouchers', true)
 ON CONFLICT (id) DO NOTHING;
 
-DROP POLICY IF EXISTS "Vouchers publicos acceso total" ON storage.objects;
-CREATE POLICY "Vouchers publicos acceso total"
+CREATE POLICY "Vouchers accesibles por usuarios autenticados"
 ON storage.objects FOR ALL
-USING (bucket_id = 'vouchers')
-WITH CHECK (bucket_id = 'vouchers');
+USING (bucket_id = 'vouchers' AND auth.uid()::text = (storage.foldername(name))[1])
+WITH CHECK (bucket_id = 'vouchers' AND auth.uid()::text = (storage.foldername(name))[1]);
+
+-- Políticas públicas de lectura para vouchers (opcional si URLs públicas activadas)
+CREATE POLICY "Vouchers públicos para lectura"
+ON storage.objects FOR SELECT
+USING (bucket_id = 'vouchers');
 
 -- ==============================================================================
--- MÉTODOS DE PAGO INICIALES POR DEFECTO
+-- DATOS SEMILLA POR DEFECTO PARA NUEVOS USUARIOS (Trigger Automático)
 -- ==============================================================================
-INSERT INTO public.metodos_pago (nombre) VALUES
-    ('Efectivo'),
-    ('Transferencia'),
-    ('Mercado Pago'),
-    ('Mercado Crédito'),
-    ('Tarjeta de Crédito')
-ON CONFLICT (nombre) DO NOTHING;
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Crear métodos de pago por defecto para el usuario recién registrado
+    INSERT INTO public.metodos_pago (user_id, nombre) VALUES
+        (NEW.id, 'Efectivo'),
+        (NEW.id, 'Transferencia'),
+        (NEW.id, 'Mercado Pago'),
+        (NEW.id, 'Mercado Crédito'),
+        (NEW.id, 'Tarjeta de Crédito');
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+    AFTER INSERT ON auth.users
+    FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();

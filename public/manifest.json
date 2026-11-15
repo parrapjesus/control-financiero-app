@@ -1,12 +1,12 @@
 {
   "name": "Control Financiero Pro",
   "short_name": "FinanzasPro",
-  "description": "Control financiero personal, gastos diarios, servicios, deudas y asistente con IA Gemini",
+  "description": "Tablero visual de control financiero personal, flujo mensual, compromisos e inversiones",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#020617",
-  "theme_color": "#020617",
+  "background_color": "#050D1E",
+  "theme_color": "#050D1E",
   "icons": [
     {
       "src": "https://img.icons8.com/color/192/wallet--v1.png",

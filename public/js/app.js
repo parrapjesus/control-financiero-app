@@ -11,10 +11,14 @@ const AppState = {
     tarjetas: [],
     prestamos: [],
     historial: [],
+    inversiones: [],
     metodos: ['Efectivo', 'Mercado Pago', 'Transferencia', 'Tarjeta de Crédito', 'Mercado Crédito']
   },
   currentTab: 'dashboard',
-  chartInstance: null
+  chartInstance: null,
+  flowChartInstance: null,
+  investmentsChartInstance: null,
+  lastSyncAt: null
 };
 
 function getTodayString() {
@@ -103,6 +107,25 @@ const DataService = {
           AppState.data.metodos = metodos.map(m => m.nombre);
         }
 
+        // Cargar inversiones de forma segura (por si la tabla aún no fue creada en Supabase)
+        AppState.data.inversiones = DataService.loadLocalInversiones();
+        try {
+          const { data: inv, error: invError } = await client.from('inversiones').select('*').order('created_at', { ascending: false });
+          if (!invError && Array.isArray(inv)) {
+            AppState.data.inversiones = inv.map(item => ({
+              ...item,
+              monto_invertido: parseFloat(item.monto_invertido) || 0,
+              valor_actual: parseFloat(item.valor_actual) || 0,
+              rendimiento_pct: parseFloat(item.rendimiento_pct) || 0
+            }));
+          }
+        } catch (invErr) {
+          console.info('Tabla inversiones opcional no disponible aún en Supabase; usando respaldo local.');
+        }
+
+        AppState.lastSyncAt = new Date();
+        UI.updateSyncTimestamp();
+
         if (!silent) UI.showNotification('Datos sincronizados con Supabase', 'success');
       } catch (error) {
         console.error('Error al cargar datos desde Supabase:', error);
@@ -116,11 +139,39 @@ const DataService = {
     UI.renderAll();
   },
 
+  async refreshAll(btn) {
+    const icon = btn ? btn.querySelector('i') : null;
+    if (icon) icon.classList.add('fa-spin');
+    try {
+      await DataService.loadAllData(false);
+    } finally {
+      if (icon) setTimeout(() => icon.classList.remove('fa-spin'), 400);
+    }
+  },
+
+  loadLocalInversiones() {
+    try {
+      const raw = localStorage.getItem('CFP_LOCAL_INVERSIONES');
+      return raw ? JSON.parse(raw) : [];
+    } catch (e) {
+      return [];
+    }
+  },
+
+  saveLocalInversiones(list) {
+    try {
+      localStorage.setItem('CFP_LOCAL_INVERSIONES', JSON.stringify(list || []));
+    } catch (e) {}
+  },
+
   loadFromLocalStorage() {
     const saved = localStorage.getItem('CFP_LOCAL_DATA');
     if (saved) {
       try {
         AppState.data = JSON.parse(saved);
+        if (!Array.isArray(AppState.data.inversiones)) {
+          AppState.data.inversiones = DataService.loadLocalInversiones();
+        }
       } catch (e) {
         console.error('Error parseando datos locales', e);
       }
@@ -147,6 +198,7 @@ const DataService = {
           { id: '1', fecha: new Date().toLocaleDateString('es-AR'), categoria: 'Ingreso', descripcion: 'Sueldo Principal', monto: 850000, metodo: 'Transferencia' },
           { id: '2', fecha: new Date().toLocaleDateString('es-AR'), categoria: 'Servicio Pagado', descripcion: 'Alquiler', monto: 250000, metodo: 'Transferencia' }
         ],
+        inversiones: [],
         metodos: ['Efectivo', 'Mercado Pago', 'Transferencia', 'Tarjeta de Crédito', 'Mercado Crédito']
       };
       DataService.saveToLocalStorage();
@@ -831,6 +883,75 @@ const DataService = {
 
     UI.showNotification(`Capital actualizado a $${Math.round(objetivo).toLocaleString('es-AR')}`, 'success');
     UI.renderAll();
+  },
+
+  // -------------------------------------------------------------
+  // INVERSIONES (Supabase opcional + respaldo localStorage)
+  // -------------------------------------------------------------
+  async addInversion({ nombre, tipo, plataforma, monto_invertido, valor_actual, moneda, notas }) {
+    const invertido = parseFloat(monto_invertido) || 0;
+    const actual = parseFloat(valor_actual) || invertido;
+    if (!nombre || invertido < 0) {
+      UI.showNotification('Ingresa un nombre y monto válido para la inversión', 'warning');
+      return false;
+    }
+
+    const rendimientoPct = invertido > 0 ? Math.round(((actual - invertido) / invertido) * 1000) / 10 : 0;
+    const payload = {
+      nombre: String(nombre).trim(),
+      tipo: tipo || 'Renta Fija',
+      plataforma: plataforma ? String(plataforma).trim() : 'General',
+      monto_invertido: invertido,
+      valor_actual: actual,
+      moneda: moneda || 'ARS',
+      rendimiento_pct: rendimientoPct,
+      fecha: getTodayString(),
+      notas: notas ? String(notas).trim() : ''
+    };
+
+    let inserted = { id: 'inv-' + Date.now(), ...payload };
+    const client = SupabaseConfig.client;
+
+    if (client && SupabaseConfig.isConfigured()) {
+      try {
+        const { data, error } = await client.from('inversiones').insert([payload]).select();
+        if (!error && data && data[0]) {
+          inserted = {
+            ...data[0],
+            monto_invertido: parseFloat(data[0].monto_invertido) || 0,
+            valor_actual: parseFloat(data[0].valor_actual) || 0,
+            rendimiento_pct: parseFloat(data[0].rendimiento_pct) || 0
+          };
+        }
+      } catch (e) {
+        console.info('Guardando inversión en almacenamiento local hasta crear tabla en Supabase.');
+      }
+    }
+
+    if (!Array.isArray(AppState.data.inversiones)) AppState.data.inversiones = [];
+    AppState.data.inversiones.unshift(inserted);
+    DataService.saveLocalInversiones(AppState.data.inversiones);
+    DataService.saveToLocalStorage();
+
+    await DataService.logHistorial('Inversión', `${payload.nombre} (${payload.tipo})`, invertido, payload.plataforma);
+    UI.renderAll();
+    UI.showNotification(`Inversión "${payload.nombre}" registrada`, 'success');
+    return true;
+  },
+
+  async deleteInversion(id) {
+    const client = SupabaseConfig.client;
+    if (client && SupabaseConfig.isConfigured()) {
+      try {
+        await client.from('inversiones').delete().eq('id', id);
+      } catch (e) {}
+    }
+
+    AppState.data.inversiones = (AppState.data.inversiones || []).filter(i => String(i.id) !== String(id));
+    DataService.saveLocalInversiones(AppState.data.inversiones);
+    DataService.saveToLocalStorage();
+    UI.renderAll();
+    UI.showNotification('Inversión eliminada', 'info');
   }
 };
 
@@ -839,106 +960,258 @@ const DataService = {
 // ==============================================================================
 
 const Calculations = {
-  isCurrentMonth(dateString) {
-    if (!dateString) return true;
-    if (dateString instanceof Date) {
-      const now = new Date();
-      return dateString.getFullYear() === now.getFullYear() && dateString.getMonth() === now.getMonth();
+  parseDateParts(dateString) {
+    if (!dateString) return null;
+    if (dateString instanceof Date && !isNaN(dateString.getTime())) {
+      return { year: dateString.getFullYear(), month: dateString.getMonth() + 1, day: dateString.getDate() };
     }
-    const now = new Date();
-    const curYear = now.getFullYear();
-    const curMonth = now.getMonth() + 1;
-
     const cleanStr = String(dateString).trim().split('T')[0].split(' ')[0];
 
-    // Formato con guiones
     if (cleanStr.includes('-')) {
       const parts = cleanStr.split('-');
       if (parts.length === 3) {
         if (parts[0].length === 4) {
-          // YYYY-MM-DD
-          return parseInt(parts[0], 10) === curYear && parseInt(parts[1], 10) === curMonth;
-        } else if (parts[2].length === 4) {
-          // DD-MM-YYYY
-          return parseInt(parts[2], 10) === curYear && parseInt(parts[1], 10) === curMonth;
+          return { year: parseInt(parts[0], 10), month: parseInt(parts[1], 10), day: parseInt(parts[2], 10) };
+        }
+        if (parts[2].length === 4) {
+          return { year: parseInt(parts[2], 10), month: parseInt(parts[1], 10), day: parseInt(parts[0], 10) };
         }
       } else if (parts.length === 2) {
-        return parseInt(parts[0], 10) === curYear && parseInt(parts[1], 10) === curMonth;
+        return { year: parseInt(parts[0], 10), month: parseInt(parts[1], 10), day: 1 };
       }
     }
 
-    // Formato con barras DD/MM/YYYY o YYYY/MM/DD
     if (cleanStr.includes('/')) {
       const parts = cleanStr.split('/');
       if (parts.length === 3) {
         if (parts[2].length === 4) {
-          // DD/MM/YYYY
-          return parseInt(parts[2], 10) === curYear && parseInt(parts[1], 10) === curMonth;
-        } else if (parts[0].length === 4) {
-          // YYYY/MM/DD
-          return parseInt(parts[0], 10) === curYear && parseInt(parts[1], 10) === curMonth;
+          return { year: parseInt(parts[2], 10), month: parseInt(parts[1], 10), day: parseInt(parts[0], 10) };
+        }
+        if (parts[0].length === 4) {
+          return { year: parseInt(parts[0], 10), month: parseInt(parts[1], 10), day: parseInt(parts[2], 10) };
         }
       } else if (parts.length === 2) {
-        return parseInt(parts[1], 10) === curMonth;
+        const now = new Date();
+        return { year: now.getFullYear(), month: parseInt(parts[1], 10), day: parseInt(parts[0], 10) || 1 };
       }
     }
 
-    // Fallback Date object (evitando desfasaje UTC)
     const d = new Date(dateString);
     if (!isNaN(d.getTime())) {
-      return (d.getUTCFullYear() === curYear && (d.getUTCMonth() + 1) === curMonth) ||
-             (d.getFullYear() === curYear && (d.getMonth() + 1) === curMonth);
+      return { year: d.getFullYear(), month: d.getMonth() + 1, day: d.getDate() };
+    }
+    return null;
+  },
+
+  isCurrentMonth(dateString) {
+    if (!dateString) return true;
+    const now = new Date();
+    const curYear = now.getFullYear();
+    const curMonth = now.getMonth() + 1;
+    const parsed = Calculations.parseDateParts(dateString);
+    if (parsed) {
+      return parsed.year === curYear && parsed.month === curMonth;
     }
     return false;
   },
 
   getMetrics() {
+    const now = new Date();
+    const curYear = now.getFullYear();
+    const curMonth = now.getMonth() + 1;
+    const todayDay = now.getDate();
+    const lastDayOfMonth = new Date(curYear, curMonth, 0).getDate();
+    const diasRestantesMes = Math.max(1, (lastDayOfMonth - todayDay) + 1);
+
     // Total fondos registrados en cuentas y bancos del usuario
-    const totalIngresos = AppState.data.ingresos
+    const totalIngresos = (AppState.data.ingresos || [])
       .reduce((sum, i) => sum + (parseFloat(i.monto) || 0), 0);
 
-    const totalGastosDiarios = AppState.data.diarios
-      .filter(d => Calculations.isCurrentMonth(d.fecha))
-      .reduce((sum, d) => sum + (parseFloat(d.monto) || 0), 0);
+    // Desglose por cuenta / billetera
+    const walletMap = {};
+    (AppState.data.ingresos || []).forEach(i => {
+      const key = (i.metodo || i.descripcion || 'General').trim();
+      walletMap[key] = (walletMap[key] || 0) + (parseFloat(i.monto) || 0);
+    });
+    const cuentasDesglose = Object.entries(walletMap)
+      .map(([metodo, monto]) => ({
+        metodo,
+        monto,
+        pct: totalIngresos > 0 ? Math.round((monto / totalIngresos) * 100) : 0
+      }))
+      .sort((a, b) => b.monto - a.monto);
+
+    // Gastos diarios del mes actual
+    const diariosMes = (AppState.data.diarios || []).filter(d => Calculations.isCurrentMonth(d.fecha));
+    const totalGastosDiarios = diariosMes.reduce((sum, d) => sum + (parseFloat(d.monto) || 0), 0);
 
     let totalServiciosPagados = 0;
     let totalServiciosPendientes = 0;
     let totalServicios = 0;
+    const compromisosPendientes = [];
 
-    AppState.data.servicios.forEach(s => {
+    (AppState.data.servicios || []).forEach(s => {
       const monto = parseFloat(s.monto) || 0;
       totalServicios += monto;
-      if (s.estado === 'Pagado') totalServiciosPagados += monto;
-      else totalServiciosPendientes += monto;
+      if (s.estado === 'Pagado') {
+        totalServiciosPagados += monto;
+      } else {
+        totalServiciosPendientes += monto;
+        const venc = parseInt(s.vencimiento, 10) || 1;
+        compromisosPendientes.push({
+          id: s.id,
+          tipo: 'servicio',
+          nombre: s.servicio,
+          detalle: `Servicio fijo • Vence día ${venc}`,
+          monto,
+          vencimiento: venc,
+          diasRestantes: venc - todayDay,
+          metodo: s.metodo_pago || 'Pendiente'
+        });
+      }
     });
 
-    const cuotasTarjetas = AppState.data.tarjetas.reduce((sum, t) => {
-      if ((t.cuotas_pagadas || 0) >= t.cuotas_totales) return sum;
-      const nombre = (t.compra || '').toLowerCase().trim();
-      const yaPagadaEsteMes = AppState.data.historial.some(h =>
+    const isCuotaPagadaEsteMes = (nombreItem) => {
+      const nombre = (nombreItem || '').toLowerCase().trim();
+      return (AppState.data.historial || []).some(h =>
         (h.categoria || '').toLowerCase().includes('cuota') &&
         Calculations.isCurrentMonth(h.fecha) &&
         (h.descripcion || '').toLowerCase().includes(nombre)
       );
-      return yaPagadaEsteMes ? sum : sum + (parseFloat(t.monto_cuota) || 0);
-    }, 0);
+    };
 
-    const cuotasPrestamos = AppState.data.prestamos.reduce((sum, p) => {
-      if ((p.cuotas_pagadas || 0) >= p.cuotas_totales) return sum;
-      const nombre = (p.prestamo || '').toLowerCase().trim();
-      const yaPagadaEsteMes = AppState.data.historial.some(h =>
-        (h.categoria || '').toLowerCase().includes('cuota') &&
-        Calculations.isCurrentMonth(h.fecha) &&
-        (h.descripcion || '').toLowerCase().includes(nombre)
-      );
-      return yaPagadaEsteMes ? sum : sum + (parseFloat(p.monto_cuota) || 0);
-    }, 0);
+    let cuotasTarjetas = 0;
+    (AppState.data.tarjetas || []).forEach(t => {
+      if ((t.cuotas_pagadas || 0) >= t.cuotas_totales) return;
+      if (isCuotaPagadaEsteMes(t.compra)) return;
+      const cuota = parseFloat(t.monto_cuota) || 0;
+      cuotasTarjetas += cuota;
+      compromisosPendientes.push({
+        id: t.id,
+        tipo: 'tarjeta',
+        nombre: t.compra,
+        detalle: `Tarjeta • Cuota ${(t.cuotas_pagadas || 0) + 1}/${t.cuotas_totales}`,
+        monto: cuota,
+        vencimiento: 99,
+        diasRestantes: 99,
+        metodo: t.metodo || 'Tarjeta de Crédito'
+      });
+    });
+
+    let cuotasPrestamos = 0;
+    (AppState.data.prestamos || []).forEach(p => {
+      if ((p.cuotas_pagadas || 0) >= p.cuotas_totales) return;
+      if (isCuotaPagadaEsteMes(p.prestamo)) return;
+      const cuota = parseFloat(p.monto_cuota) || 0;
+      cuotasPrestamos += cuota;
+      compromisosPendientes.push({
+        id: p.id,
+        tipo: 'prestamo',
+        nombre: p.prestamo,
+        detalle: `Préstamo • Cuota ${(p.cuotas_pagadas || 0) + 1}/${p.cuotas_totales}`,
+        monto: cuota,
+        vencimiento: 99,
+        diasRestantes: 99,
+        metodo: p.metodo || 'General'
+      });
+    });
+
+    compromisosPendientes.sort((a, b) => a.diasRestantes - b.diasRestantes);
+
+    const cuotasPagadasMes = (AppState.data.historial || [])
+      .filter(h => (h.categoria || '').toLowerCase().includes('cuota') && Calculations.isCurrentMonth(h.fecha))
+      .reduce((sum, h) => sum + Math.abs(parseFloat(h.monto) || 0), 0);
+
+    const totalCuotasPendientes = cuotasTarjetas + cuotasPrestamos;
+    const totalPorPagar = totalServiciosPendientes + totalCuotasPendientes;
+    const totalGastosMes = totalGastosDiarios + totalServiciosPagados + cuotasPagadasMes;
 
     // Saldo real disponible = Dinero real actual en todas las cuentas y bancos registrados
     const saldoReal = totalIngresos;
 
     // Saldo proyectado al final del mes = Dinero en mano menos obligaciones pendientes
-    const saldoProyectado = saldoReal - (totalServiciosPendientes + cuotasTarjetas + cuotasPrestamos);
+    const saldoProyectado = saldoReal - totalPorPagar;
+    const llegaBien = saldoProyectado >= 0;
+
+    // Cobertura / Margen libre para el gauge radial
+    let coberturaPct = 100;
+    if (llegaBien) {
+      coberturaPct = saldoReal > 0 ? Math.max(0, Math.min(100, Math.round((saldoProyectado / saldoReal) * 100))) : (totalPorPagar === 0 ? 100 : 0);
+    } else {
+      coberturaPct = totalPorPagar > 0 ? Math.max(0, Math.min(99, Math.round((saldoReal / totalPorPagar) * 100))) : 0;
+    }
+
+    const presupuestoDiarioSeguro = saldoProyectado > 0 ? saldoProyectado / diasRestantesMes : 0;
+
+    // Flujo Semanal del Mes (Sem 1..Sem 4) usando historial + diarios + ingresos del mes
+    const semanaIngresos = [0, 0, 0, 0];
+    const semanaGastos = [0, 0, 0, 0];
+    const weekIdxForDay = (day) => (day <= 7 ? 0 : day <= 14 ? 1 : day <= 21 ? 2 : 3);
+
+    diariosMes.forEach(d => {
+      const p = Calculations.parseDateParts(d.fecha);
+      const idx = weekIdxForDay(p ? p.day : todayDay);
+      semanaGastos[idx] += parseFloat(d.monto) || 0;
+    });
+
+    (AppState.data.servicios || []).forEach(s => {
+      if (s.estado === 'Pagado') {
+        const p = Calculations.parseDateParts(s.fecha_pago);
+        if (!s.fecha_pago || (p && p.year === curYear && p.month === curMonth)) {
+          const idx = weekIdxForDay(p ? p.day : (parseInt(s.vencimiento, 10) || todayDay));
+          semanaGastos[idx] += parseFloat(s.monto) || 0;
+        }
+      }
+    });
+
+    const historialIngresosMes = (AppState.data.historial || []).filter(h =>
+      (h.categoria || '').toLowerCase() === 'ingreso' && Calculations.isCurrentMonth(h.fecha)
+    );
+    if (historialIngresosMes.length > 0) {
+      historialIngresosMes.forEach(h => {
+        const p = Calculations.parseDateParts(h.fecha);
+        const idx = weekIdxForDay(p ? p.day : todayDay);
+        semanaIngresos[idx] += parseFloat(h.monto) || 0;
+      });
+    } else {
+      (AppState.data.ingresos || []).forEach(i => {
+        const p = Calculations.parseDateParts(i.fecha);
+        const idx = (p && p.year === curYear && p.month === curMonth) ? weekIdxForDay(p.day) : 0;
+        semanaIngresos[idx] += parseFloat(i.monto) || 0;
+      });
+    }
+
+    // Gastos por Método / Cuenta (mes actual)
+    const gastoMetodoMap = {};
+    diariosMes.forEach(d => {
+      const m = (d.metodo || 'General').trim();
+      gastoMetodoMap[m] = (gastoMetodoMap[m] || 0) + (parseFloat(d.monto) || 0);
+    });
+    (AppState.data.servicios || []).forEach(s => {
+      if (s.estado === 'Pagado') {
+        const m = (s.metodo_pago || 'General').trim();
+        gastoMetodoMap[m] = (gastoMetodoMap[m] || 0) + (parseFloat(s.monto) || 0);
+      }
+    });
+    const totalGastosPorMetodo = Object.values(gastoMetodoMap).reduce((a, b) => a + b, 0);
+    const gastosPorMetodo = Object.entries(gastoMetodoMap)
+      .map(([metodo, monto]) => ({
+        metodo,
+        monto,
+        pct: totalGastosPorMetodo > 0 ? Math.round((monto / totalGastosPorMetodo) * 100) : 0
+      }))
+      .sort((a, b) => b.monto - a.monto)
+      .slice(0, 5);
+
+    // Inversiones & Patrimonio Neto
+    const inversiones = AppState.data.inversiones || [];
+    const inversionesCapital = inversiones.reduce((sum, inv) => sum + (parseFloat(inv.monto_invertido) || 0), 0);
+    const inversionesValorActual = inversiones.reduce((sum, inv) => sum + (parseFloat(inv.valor_actual) || parseFloat(inv.monto_invertido) || 0), 0);
+    const inversionesGanancia = inversionesValorActual - inversionesCapital;
+    const inversionesRendimientoPct = inversionesCapital > 0
+      ? Math.round((inversionesGanancia / inversionesCapital) * 1000) / 10
+      : 0;
+    const patrimonioTotalNeto = saldoReal + inversionesValorActual;
 
     return {
       totalIngresos,
@@ -948,8 +1221,30 @@ const Calculations = {
       totalServiciosPendientes,
       cuotasTarjetas,
       cuotasPrestamos,
+      totalCuotasPendientes,
+      totalPorPagar,
+      totalGastosMes,
+      cuotasPagadasMes,
       saldoReal,
-      saldoProyectado
+      saldoProyectado,
+      llegaBien,
+      coberturaPct,
+      diasRestantesMes,
+      presupuestoDiarioSeguro,
+      cuentasDesglose,
+      flujoSemanal: {
+        labels: ['Sem 1', 'Sem 2', 'Sem 3', 'Sem 4'],
+        ingresos: semanaIngresos,
+        gastos: semanaGastos
+      },
+      gastosPorMetodo,
+      totalGastosPorMetodo,
+      compromisosPendientes,
+      inversionesCapital,
+      inversionesValorActual,
+      inversionesGanancia,
+      inversionesRendimientoPct,
+      patrimonioTotalNeto
     };
   }
 };
@@ -961,38 +1256,161 @@ const Calculations = {
 const UI = {
   formatCurrency(val) {
     const num = parseFloat(val) || 0;
-    return '$' + Math.round(num).toLocaleString('es-AR');
+    const abs = Math.round(Math.abs(num)).toLocaleString('es-AR');
+    return num < 0 ? '-$' + abs : '$' + abs;
+  },
+
+  updateSyncTimestamp() {
+    const el = document.getElementById('sync-last-update');
+    if (!el || !AppState.lastSyncAt) return;
+    const hh = String(AppState.lastSyncAt.getHours()).padStart(2, '0');
+    const mm = String(AppState.lastSyncAt.getMinutes()).padStart(2, '0');
+    el.textContent = `Actualizado ${hh}:${mm}`;
+  },
+
+  updateMonthLabel() {
+    const el = document.getElementById('header-current-month');
+    if (!el) return;
+    const meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+    const now = new Date();
+    el.textContent = `${meses[now.getMonth()]} ${now.getFullYear()}`;
   },
 
   renderAll() {
-    UI.renderDashboard();
+    const m = Calculations.getMetrics();
+    UI.updateMonthLabel();
+    UI.renderDashboard(m);
     UI.renderDiarios();
     UI.renderServicios();
     UI.renderDeudas();
+    UI.renderInversiones(m);
     UI.renderHistorial();
     UI.renderMetodosSelects();
     UI.renderMetodosList();
   },
 
-  renderDashboard() {
-    const m = Calculations.getMetrics();
+  renderDashboard(metricsArg) {
+    const m = metricsArg || Calculations.getMetrics();
 
     const elSaldoReal = document.getElementById('metric-saldo-real');
     const elIngresos = document.getElementById('metric-ingresos');
+    const elGastosMes = document.getElementById('metric-gastos-mes');
     const elGastosDiarios = document.getElementById('metric-gastos-diarios');
     const elServiciosFijos = document.getElementById('metric-servicios-fijos');
     const elServiciosPendientes = document.getElementById('metric-servicios-pendientes');
+    const elTotalPorPagar = document.getElementById('metric-total-por-pagar');
     const elSaldoProyectado = document.getElementById('metric-saldo-proyectado');
 
     if (elSaldoReal) elSaldoReal.textContent = UI.formatCurrency(m.saldoReal);
     if (elIngresos) elIngresos.textContent = UI.formatCurrency(m.totalIngresos);
+    if (elGastosMes) elGastosMes.textContent = UI.formatCurrency(m.totalGastosMes);
     if (elGastosDiarios) elGastosDiarios.textContent = UI.formatCurrency(m.totalGastosDiarios);
     if (elServiciosFijos) elServiciosFijos.textContent = UI.formatCurrency(m.totalServicios);
     if (elServiciosPendientes) elServiciosPendientes.textContent = UI.formatCurrency(m.totalServiciosPendientes);
-    if (elSaldoProyectado) elSaldoProyectado.textContent = UI.formatCurrency(m.saldoProyectado);
+    if (elTotalPorPagar) elTotalPorPagar.textContent = UI.formatCurrency(m.totalPorPagar);
+    if (elSaldoProyectado) {
+      elSaldoProyectado.textContent = (m.saldoProyectado > 0 ? '+' : '') + UI.formatCurrency(m.saldoProyectado);
+    }
 
-    UI.renderDashboardIngresos();
+    UI.renderWalletsBreakdown(m);
+    UI.renderFinDeMesCard(m);
     UI.renderChart(m);
+    UI.renderFlowChart(m);
+    UI.renderGastosPorMetodo(m);
+    UI.renderPendingCompromisos(m);
+    UI.renderDashboardInversiones(m);
+    UI.renderDashboardIngresos();
+  },
+
+  renderWalletsBreakdown(m) {
+    const container = document.getElementById('dashboard-wallets-grid');
+    if (!container) return;
+
+    const cuentas = m.cuentasDesglose || [];
+    if (cuentas.length === 0) {
+      container.innerHTML = `
+        <div class="col-span-3 p-3.5 rounded-xl glass-subcard text-xs text-slate-400 flex items-center gap-2">
+          <i class="fa-solid fa-wallet text-sky-400"></i>
+          <span>Aún no hay cuentas o billeteras con saldo registradas en Google Sheets.</span>
+        </div>`;
+      return;
+    }
+
+    const barColors = ['bg-cyan-400', 'bg-blue-500', 'bg-sky-400', 'bg-emerald-400', 'bg-indigo-400'];
+    container.innerHTML = cuentas.slice(0, 6).map((c, idx) => {
+      const color = barColors[idx % barColors.length];
+      return `
+        <div class="p-3.5 rounded-xl glass-subcard flex flex-col justify-between">
+          <div class="flex items-center justify-between gap-2 mb-1.5">
+            <span class="text-[11px] font-medium text-slate-300 flex items-center gap-1.5 truncate">
+              <span class="w-2 h-2 rounded-full ${color} shrink-0"></span>
+              <span class="truncate">${c.metodo}</span>
+            </span>
+            <span class="text-[10px] font-semibold text-slate-400 shrink-0">${c.pct}%</span>
+          </div>
+          <div class="text-sm sm:text-base font-bold text-white">${UI.formatCurrency(c.monto)}</div>
+          <div class="w-full bg-slate-800/90 h-1.5 rounded-full mt-2 overflow-hidden">
+            <div class="${color} h-full rounded-full transition-all duration-500" style="width: ${Math.max(4, c.pct)}%"></div>
+          </div>
+        </div>`;
+    }).join('');
+  },
+
+  renderFinDeMesCard(m) {
+    const badge = document.getElementById('status-fin-mes-badge');
+    const arc = document.getElementById('gauge-circle-arc');
+    const pctLabel = document.getElementById('gauge-pct-label');
+    const subLabel = document.getElementById('gauge-sub-label');
+    const dispEl = document.getElementById('metric-disponible-comp');
+    const pendEl = document.getElementById('metric-pendiente-comp');
+    const cuotasEl = document.getElementById('metric-cuotas-pendientes');
+    const resBox = document.getElementById('fin-mes-result-box');
+    const resLabel = document.getElementById('fin-mes-result-label');
+    const resVal = document.getElementById('metric-saldo-proyectado');
+    const presDiarioEl = document.getElementById('metric-presupuesto-diario');
+    const diasRestEl = document.getElementById('metric-dias-restantes');
+
+    if (dispEl) dispEl.textContent = UI.formatCurrency(m.saldoReal);
+    if (pendEl) pendEl.textContent = '-' + UI.formatCurrency(m.totalPorPagar);
+    if (cuotasEl) cuotasEl.textContent = UI.formatCurrency(m.totalCuotasPendientes);
+    if (diasRestEl) diasRestEl.textContent = m.diasRestantesMes;
+    if (presDiarioEl) presDiarioEl.textContent = UI.formatCurrency(m.presupuestoDiarioSeguro);
+
+    const circumference = 301.6;
+    const pct = Math.max(0, Math.min(100, m.coberturaPct));
+    if (arc) {
+      arc.setAttribute('stroke-dashoffset', String(circumference - (circumference * pct) / 100));
+    }
+    if (pctLabel) pctLabel.textContent = `${pct}%`;
+
+    if (m.llegaBien) {
+      const holgado = m.coberturaPct >= 25 || m.totalPorPagar === 0;
+      if (subLabel) subLabel.textContent = 'Libre post-pagos';
+      if (badge) {
+        badge.className = holgado
+          ? 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-400/30 text-emerald-300 text-[11px] font-semibold shrink-0'
+          : 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-sky-500/15 border border-sky-400/30 text-sky-300 text-[11px] font-semibold shrink-0';
+        badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full ${holgado ? 'bg-emerald-400' : 'bg-sky-400'}"></span> ${holgado ? 'Llegás holgado' : 'Llegás justo'}`;
+      }
+      if (resBox) resBox.className = 'p-2.5 rounded-xl bg-blue-600/15 border border-cyan-400/30 flex items-center justify-between';
+      if (resLabel) {
+        resLabel.className = 'text-xs font-semibold text-cyan-300';
+        resLabel.textContent = 'Te sobra al cierre';
+      }
+      if (resVal) resVal.className = 'text-base font-extrabold text-emerald-400';
+    } else {
+      if (subLabel) subLabel.textContent = 'Cubierto hoy';
+      if (badge) {
+        badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-500/15 border border-rose-400/35 text-rose-300 text-[11px] font-semibold shrink-0';
+        badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span> Falta para el mes`;
+      }
+      if (resBox) resBox.className = 'p-2.5 rounded-xl bg-rose-500/15 border border-rose-400/35 flex items-center justify-between';
+      if (resLabel) {
+        resLabel.className = 'text-xs font-semibold text-rose-300';
+        resLabel.textContent = 'Te falta cubrir';
+      }
+      if (resVal) resVal.className = 'text-base font-extrabold text-rose-400';
+    }
   },
 
   renderDashboardIngresos() {
@@ -1001,18 +1419,18 @@ const UI = {
 
     if (!AppState.data.ingresos || AppState.data.ingresos.length === 0) {
       container.innerHTML = `
-        <div class="text-center py-6 text-slate-500 bg-slate-900/40 rounded-2xl border border-slate-800">
-          <i class="fa-solid fa-wallet text-2xl mb-1.5 opacity-60"></i>
+        <div class="text-center py-6 text-slate-400 glass-subcard rounded-2xl">
+          <i class="fa-solid fa-wallet text-2xl mb-1.5 text-sky-400/60"></i>
           <p class="text-xs">No hay fondos o ingresos registrados todavía.</p>
         </div>`;
       return;
     }
 
     container.innerHTML = AppState.data.ingresos.map(i => `
-      <div class="flex items-center justify-between p-3.5 bg-slate-800/60 rounded-xl border border-slate-700/50 hover:border-slate-600 transition">
+      <div class="flex items-center justify-between p-3.5 glass-subcard rounded-xl hover:border-sky-400/30 transition">
         <div class="flex items-center gap-3">
-          <div class="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center font-bold text-xs">
-            <i class="fa-solid fa-arrow-down"></i>
+          <div class="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-400/20 text-cyan-300 flex items-center justify-center font-bold text-xs">
+            <i class="fa-solid fa-building-columns"></i>
           </div>
           <div>
             <h4 class="text-sm font-semibold text-white">${i.descripcion}</h4>
@@ -1020,8 +1438,8 @@ const UI = {
           </div>
         </div>
         <div class="flex items-center gap-2">
-          <span class="text-sm font-bold text-emerald-400">+${UI.formatCurrency(i.monto)}</span>
-          <button onclick="DataService.deleteIngreso('${i.id}')" class="text-slate-500 hover:text-rose-400 p-1.5 transition" title="Eliminar ingreso">
+          <span class="text-sm font-bold text-emerald-400">${UI.formatCurrency(i.monto)}</span>
+          <button onclick="DataService.deleteIngreso('${i.id}')" class="text-slate-500 hover:text-rose-400 p-1.5 transition" title="Eliminar registro">
             <i class="fa-regular fa-trash-can text-xs"></i>
           </button>
         </div>
@@ -1037,19 +1455,23 @@ const UI = {
       AppState.chartInstance.destroy();
     }
 
+    const values = [
+      Math.max(0, m.totalGastosDiarios),
+      Math.max(0, m.totalServiciosPagados),
+      Math.max(0, m.totalServiciosPendientes),
+      Math.max(0, m.cuotasTarjetas + m.cuotasPrestamos),
+      Math.max(0, m.saldoProyectado)
+    ];
+
     AppState.chartInstance = new Chart(ctx, {
       type: 'doughnut',
       data: {
-        labels: ['Gastos Diarios', 'Servicios Pagados', 'Servicios Pendientes', 'Cuotas Deudas', 'Saldo Disponible'],
+        labels: ['Gastos Diarios', 'Fijos Pagados', 'Fijos por Pagar', 'Cuotas Deudas', 'Libre Proyectado'],
         datasets: [{
-          data: [
-            Math.max(0, m.totalGastosDiarios),
-            Math.max(0, m.totalServiciosPagados),
-            Math.max(0, m.totalServiciosPendientes),
-            Math.max(0, m.cuotasTarjetas + m.cuotasPrestamos),
-            Math.max(0, m.saldoProyectado)
-          ],
-          backgroundColor: ['#F43F5E', '#10B981', '#F59E0B', '#8B5CF6', '#3B82F6'],
+          data: values.some(v => v > 0) ? values : [1],
+          backgroundColor: values.some(v => v > 0)
+            ? ['#2563EB', '#38BDF8', '#0284C7', '#818CF8', '#10B981']
+            : ['#1E3A5F'],
           borderWidth: 0,
           hoverOffset: 6
         }]
@@ -1060,7 +1482,7 @@ const UI = {
         plugins: {
           legend: {
             position: 'bottom',
-            labels: { color: '#94A3B8', font: { family: 'Plus Jakarta Sans', size: 12 } }
+            labels: { color: '#94A3B8', boxWidth: 10, padding: 12, font: { family: 'Plus Jakarta Sans', size: 11 } }
           }
         },
         cutout: '70%'
@@ -1068,19 +1490,310 @@ const UI = {
     });
   },
 
+  renderFlowChart(m) {
+    const ctx = document.getElementById('flowChart');
+    if (!ctx) return;
+
+    if (AppState.flowChartInstance) {
+      AppState.flowChartInstance.destroy();
+    }
+
+    const flujo = m.flujoSemanal || { labels: ['Sem 1', 'Sem 2', 'Sem 3', 'Sem 4'], ingresos: [0, 0, 0, 0], gastos: [0, 0, 0, 0] };
+
+    AppState.flowChartInstance = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: flujo.labels,
+        datasets: [
+          {
+            label: 'Ingresos / Fondos',
+            data: flujo.ingresos,
+            backgroundColor: '#38BDF8',
+            borderRadius: 6,
+            barPercentage: 0.65
+          },
+          {
+            label: 'Gastos',
+            data: flujo.gastos,
+            backgroundColor: '#2563EB',
+            borderRadius: 6,
+            barPercentage: 0.65
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'bottom',
+            labels: { color: '#94A3B8', boxWidth: 10, font: { family: 'Plus Jakarta Sans', size: 11 } }
+          }
+        },
+        scales: {
+          x: {
+            grid: { display: false },
+            ticks: { color: '#94A3B8', font: { size: 11 } }
+          },
+          y: {
+            grid: { color: 'rgba(56, 189, 248, 0.08)' },
+            ticks: {
+              color: '#64748B',
+              font: { size: 10 },
+              callback: (v) => '$' + Math.round(v / 1000) + 'k'
+            }
+          }
+        }
+      }
+    });
+  },
+
+  renderGastosPorMetodo(m) {
+    const container = document.getElementById('dashboard-gastos-metodo');
+    const totalEl = document.getElementById('metric-total-ejecutado');
+    if (totalEl) totalEl.textContent = UI.formatCurrency(m.totalGastosPorMetodo || 0);
+    if (!container) return;
+
+    const list = m.gastosPorMetodo || [];
+    if (list.length === 0) {
+      container.innerHTML = `<div class="py-8 text-center text-xs text-slate-400">Sin gastos ejecutados en el mes actual.</div>`;
+      return;
+    }
+
+    const barClasses = ['bg-cyan-400', 'bg-blue-500', 'bg-sky-400', 'bg-indigo-400', 'bg-emerald-400'];
+    container.innerHTML = list.map((item, idx) => `
+      <div>
+        <div class="flex justify-between text-xs mb-1">
+          <span class="text-slate-300 truncate pr-2">${item.metodo}</span>
+          <span class="font-semibold text-white shrink-0">${UI.formatCurrency(item.monto)} <span class="text-slate-400 font-normal">(${item.pct}%)</span></span>
+        </div>
+        <div class="h-2 w-full bg-slate-800/80 rounded-full overflow-hidden">
+          <div class="h-full ${barClasses[idx % barClasses.length]} rounded-full transition-all duration-500" style="width: ${Math.max(4, item.pct)}%"></div>
+        </div>
+      </div>
+    `).join('');
+  },
+
+  renderPendingCompromisos(m) {
+    const container = document.getElementById('dashboard-pending-list');
+    const countEl = document.getElementById('pending-count-badge');
+    const sumEl = document.getElementById('pending-sum-badge');
+    const items = m.compromisosPendientes || [];
+
+    if (countEl) countEl.textContent = `${items.length} ${items.length === 1 ? 'pendiente' : 'pendientes'}`;
+    if (sumEl) sumEl.textContent = `Suma: ${UI.formatCurrency(m.totalPorPagar)}`;
+    if (!container) return;
+
+    if (items.length === 0) {
+      container.innerHTML = `
+        <div class="py-6 text-center text-xs text-emerald-300 flex items-center justify-center gap-2">
+          <i class="fa-solid fa-circle-check text-emerald-400 text-base"></i>
+          <span>¡Al día! No tienes servicios ni cuotas pendientes por cubrir este mes.</span>
+        </div>`;
+      return;
+    }
+
+    container.innerHTML = items.map(item => {
+      let badgeHtml = `<span class="px-2.5 py-0.5 rounded-full bg-sky-500/15 border border-sky-400/30 text-sky-300 text-[11px] font-semibold">Pendiente</span>`;
+      if (item.tipo === 'servicio') {
+        if (item.diasRestantes < 0) {
+          badgeHtml = `<span class="px-2.5 py-0.5 rounded-full bg-rose-500/15 border border-rose-400/30 text-rose-300 text-[11px] font-semibold">Vencido (Día ${item.vencimiento})</span>`;
+        } else if (item.diasRestantes <= 5) {
+          badgeHtml = `<span class="px-2.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-400/30 text-amber-300 text-[11px] font-semibold">${item.diasRestantes === 0 ? 'Vence hoy' : `Vence en ${item.diasRestantes} días`}</span>`;
+        } else {
+          badgeHtml = `<span class="px-2.5 py-0.5 rounded-full bg-sky-500/15 border border-sky-400/30 text-sky-300 text-[11px] font-semibold">Vence en ${item.diasRestantes} días</span>`;
+        }
+      }
+
+      const iconClass = item.tipo === 'tarjeta' ? 'fa-credit-card text-sky-300 bg-blue-500/15 border-sky-400/25'
+        : item.tipo === 'prestamo' ? 'fa-hand-holding-dollar text-cyan-300 bg-cyan-500/15 border-cyan-400/25'
+        : 'fa-file-invoice text-amber-300 bg-amber-500/10 border-amber-400/25';
+
+      return `
+        <div class="py-3 flex items-center justify-between gap-3">
+          <div class="flex items-center gap-3 min-w-0">
+            <div class="w-9 h-9 rounded-xl border ${iconClass} flex items-center justify-center shrink-0">
+              <i class="fa-solid ${iconClass.split(' ')[0]} text-sm"></i>
+            </div>
+            <div class="min-w-0">
+              <h4 class="text-sm font-semibold text-white truncate">${item.nombre}</h4>
+              <span class="text-[11px] text-slate-400 block truncate">${item.detalle} • ${item.metodo}</span>
+            </div>
+          </div>
+          <div class="flex items-center gap-3 shrink-0">
+            <div class="text-right">
+              <div class="text-sm font-bold text-white">${UI.formatCurrency(item.monto)}</div>
+              <div class="mt-0.5 hidden sm:block">${badgeHtml}</div>
+            </div>
+          </div>
+        </div>`;
+    }).join('');
+  },
+
+  renderDashboardInversiones(m) {
+    const capEl = document.getElementById('dash-inv-capital');
+    const rendEl = document.getElementById('dash-inv-rendimiento');
+    const netEl = document.getElementById('dash-patrimonio-neto');
+    const grid = document.getElementById('dashboard-inversiones-grid');
+    const statusText = document.getElementById('dash-inv-status-text');
+
+    if (capEl) capEl.textContent = UI.formatCurrency(m.inversionesCapital);
+    if (rendEl) {
+      const sign = m.inversionesRendimientoPct >= 0 ? '+' : '';
+      rendEl.textContent = `${sign}${m.inversionesRendimientoPct}%`;
+      rendEl.className = `text-lg sm:text-xl font-bold ${m.inversionesRendimientoPct >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+    }
+    if (netEl) netEl.textContent = UI.formatCurrency(m.patrimonioTotalNeto);
+    if (!grid) return;
+
+    const list = AppState.data.inversiones || [];
+    if (list.length === 0) {
+      if (statusText) statusText.textContent = 'Sección lista para tus próximas inversiones: cuando empieces a invertir, verás cada activo aquí';
+      const slots = [
+        { cat: 'Renta Fija', badge: 'Disponible', title: 'Plazo Fijo / Letras', desc: 'Tasa fija, UVA o cauciones' },
+        { cat: 'Renta Variable', badge: 'Disponible', title: 'CEDEARs & Acciones', desc: 'S&P 500, ETFs y empresas' },
+        { cat: 'Money Market', badge: 'T+0', title: 'Fondos Comunes (FCI)', desc: 'Liquidez diaria remunerada' },
+        { cat: 'Divisas / Digital', badge: 'Futuro', title: 'Dólares & Criptoactivos', desc: 'Reserva de valor a largo plazo' }
+      ];
+      grid.innerHTML = slots.map(s => `
+        <div onclick="UI.switchTab('inversiones')" class="cursor-pointer p-4 rounded-xl glass-subcard hover:border-cyan-400/40 transition-all group">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-[11px] font-medium text-slate-400">${s.cat}</span>
+            <span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-sky-500/15 text-sky-300 border border-sky-400/20">${s.badge}</span>
+          </div>
+          <div class="text-sm font-bold text-white group-hover:text-cyan-300 transition">${s.title}</div>
+          <div class="text-xl font-extrabold text-slate-500 my-1.5">$0</div>
+          <div class="text-[11px] text-slate-400 truncate">${s.desc}</div>
+        </div>
+      `).join('');
+      return;
+    }
+
+    if (statusText) statusText.textContent = `${list.length} ${list.length === 1 ? 'activo monitoreado' : 'activos monitoreados'} en tu portafolio`;
+    grid.innerHTML = list.slice(0, 4).map(inv => {
+      const actual = parseFloat(inv.valor_actual) || parseFloat(inv.monto_invertido) || 0;
+      const gan = actual - (parseFloat(inv.monto_invertido) || 0);
+      const pct = inv.monto_invertido > 0 ? Math.round((gan / inv.monto_invertido) * 1000) / 10 : 0;
+      const pos = gan >= 0;
+      return `
+        <div class="p-4 rounded-xl glass-subcard hover:border-cyan-400/40 transition">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-[11px] text-slate-400 truncate">${inv.tipo || 'Inversión'}</span>
+            <span class="px-2 py-0.5 rounded text-[10px] font-semibold ${pos ? 'bg-emerald-500/15 text-emerald-300' : 'bg-rose-500/15 text-rose-300'}">${pos ? '+' : ''}${pct}%</span>
+          </div>
+          <div class="text-sm font-bold text-white truncate">${inv.nombre}</div>
+          <div class="text-xl font-extrabold text-cyan-300 my-1">${UI.formatCurrency(actual)}</div>
+          <div class="text-[11px] text-slate-400 truncate">${inv.plataforma || 'General'} • ${inv.moneda || 'ARS'}</div>
+        </div>
+      `;
+    }).join('');
+  },
+
+  renderInversiones(metricsArg) {
+    const m = metricsArg || Calculations.getMetrics();
+    const capEl = document.getElementById('inv-total-capital');
+    const actEl = document.getElementById('inv-total-actual');
+    const ganEl = document.getElementById('inv-total-ganancia');
+    const listEl = document.getElementById('list-inversiones');
+
+    if (capEl) capEl.textContent = UI.formatCurrency(m.inversionesCapital);
+    if (actEl) actEl.textContent = UI.formatCurrency(m.inversionesValorActual);
+    if (ganEl) {
+      ganEl.textContent = (m.inversionesGanancia >= 0 ? '+' : '') + UI.formatCurrency(m.inversionesGanancia);
+      ganEl.className = `text-xl sm:text-2xl font-black mt-1 ${m.inversionesGanancia >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+    }
+
+    const inversiones = AppState.data.inversiones || [];
+    if (listEl) {
+      if (inversiones.length === 0) {
+        listEl.innerHTML = `
+          <div class="text-center py-8 text-slate-400 glass-subcard rounded-2xl">
+            <i class="fa-solid fa-seedling text-3xl mb-2 text-cyan-400/70"></i>
+            <p class="text-sm font-semibold text-white">Todavía no registraste inversiones</p>
+            <p class="text-xs text-slate-400 mt-1">Usa el botón "Agregar Inversión" o la hoja Inversiones de Google Sheets cuando comiences.</p>
+          </div>`;
+      } else {
+        listEl.innerHTML = inversiones.map(inv => {
+          const invertido = parseFloat(inv.monto_invertido) || 0;
+          const actual = parseFloat(inv.valor_actual) || invertido;
+          const gan = actual - invertido;
+          const pct = invertido > 0 ? Math.round((gan / invertido) * 1000) / 10 : 0;
+          return `
+            <div class="flex items-center justify-between p-3.5 glass-subcard rounded-xl hover:border-cyan-400/35 transition">
+              <div class="flex items-center gap-3 min-w-0">
+                <div class="w-10 h-10 rounded-xl bg-blue-500/15 border border-sky-400/25 text-cyan-300 flex items-center justify-center shrink-0">
+                  <i class="fa-solid fa-chart-line"></i>
+                </div>
+                <div class="min-w-0">
+                  <h4 class="text-sm font-bold text-white truncate">${inv.nombre}</h4>
+                  <span class="text-xs text-slate-400 block truncate">${inv.tipo} • ${inv.plataforma || 'General'} ${inv.notas ? '• ' + inv.notas : ''}</span>
+                </div>
+              </div>
+              <div class="flex items-center gap-3 shrink-0">
+                <div class="text-right">
+                  <div class="text-sm font-bold text-cyan-300">${UI.formatCurrency(actual)}</div>
+                  <div class="text-[11px] ${gan >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${gan >= 0 ? '+' : ''}${pct}%</div>
+                </div>
+                <button onclick="DataService.deleteInversion('${inv.id}')" class="text-slate-500 hover:text-rose-400 p-1.5 transition" title="Eliminar inversión">
+                  <i class="fa-regular fa-trash-can"></i>
+                </button>
+              </div>
+            </div>`;
+        }).join('');
+      }
+    }
+
+    const ctx = document.getElementById('investmentsChart');
+    if (ctx) {
+      if (AppState.investmentsChartInstance) {
+        AppState.investmentsChartInstance.destroy();
+      }
+      const grouped = {};
+      inversiones.forEach(inv => {
+        const key = inv.tipo || 'Otros';
+        grouped[key] = (grouped[key] || 0) + (parseFloat(inv.valor_actual) || parseFloat(inv.monto_invertido) || 0);
+      });
+      const labels = Object.keys(grouped);
+      const data = Object.values(grouped);
+
+      AppState.investmentsChartInstance = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: labels.length > 0 ? labels : ['Sin activos aún'],
+          datasets: [{
+            data: data.length > 0 ? data : [1],
+            backgroundColor: labels.length > 0 ? ['#2563EB', '#06B6D4', '#38BDF8', '#10B981'] : ['#1E3A5F'],
+            borderWidth: 0
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              position: 'bottom',
+              labels: { color: '#94A3B8', boxWidth: 10, font: { family: 'Plus Jakarta Sans', size: 11 } }
+            }
+          },
+          cutout: '68%'
+        }
+      });
+    }
+  },
+
   renderDiarios() {
     const container = document.getElementById('list-diarios');
     if (!container) return;
 
     if (AppState.data.diarios.length === 0) {
-      container.innerHTML = `<div class="text-center py-8 text-slate-500"><i class="fa-solid fa-receipt text-3xl mb-2"></i><p>No hay gastos diarios registrados este mes.</p></div>`;
+      container.innerHTML = `<div class="text-center py-8 text-slate-400"><i class="fa-solid fa-receipt text-3xl mb-2 text-sky-400/60"></i><p>No hay gastos diarios registrados este mes.</p></div>`;
       return;
     }
 
     container.innerHTML = AppState.data.diarios.map(d => `
-      <div class="flex items-center justify-between p-3.5 bg-slate-800/60 rounded-xl border border-slate-700/50 hover:border-slate-600 transition">
+      <div class="flex items-center justify-between p-3.5 glass-subcard rounded-xl hover:border-sky-400/30 transition">
         <div class="flex items-center gap-3">
-          <div class="w-10 h-10 rounded-lg bg-rose-500/10 text-rose-400 flex items-center justify-center font-bold">
+          <div class="w-10 h-10 rounded-lg bg-blue-500/15 border border-sky-400/20 text-sky-300 flex items-center justify-center font-bold">
             <i class="fa-solid fa-cart-shopping"></i>
           </div>
           <div>
@@ -1103,7 +1816,7 @@ const UI = {
     if (!container) return;
 
     if (AppState.data.servicios.length === 0) {
-      container.innerHTML = `<div class="text-center py-8 text-slate-500"><i class="fa-solid fa-calendar-check text-3xl mb-2"></i><p>No hay servicios fijos configurados.</p></div>`;
+      container.innerHTML = `<div class="text-center py-8 text-slate-400"><i class="fa-solid fa-calendar-check text-3xl mb-2 text-sky-400/60"></i><p>No hay servicios fijos configurados.</p></div>`;
       return;
     }
 
@@ -1116,33 +1829,33 @@ const UI = {
         ? `<span class="px-2.5 py-1 text-xs font-semibold rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Pagado</span>`
         : isOverdue
         ? `<span class="px-2.5 py-1 text-xs font-semibold rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20">Vencido (Día ${s.vencimiento})</span>`
-        : `<span class="px-2.5 py-1 text-xs font-semibold rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">Vence día ${s.vencimiento}</span>`;
+        : `<span class="px-2.5 py-1 text-xs font-semibold rounded-full bg-sky-500/10 text-sky-300 border border-sky-400/25">Vence día ${s.vencimiento}</span>`;
 
       return `
-        <div class="flex flex-col md:flex-row md:items-center justify-between p-4 bg-slate-800/60 rounded-xl border border-slate-700/50 gap-3">
+        <div class="flex flex-col md:flex-row md:items-center justify-between p-4 glass-subcard rounded-xl gap-3 hover:border-sky-400/30 transition">
           <div class="flex items-center gap-3">
-            <button onclick="DataService.toggleServicio('${s.id}')" class="w-8 h-8 rounded-lg flex items-center justify-center transition ${isPaid ? 'bg-emerald-500 text-white' : 'bg-slate-700 text-slate-400 hover:bg-slate-600'}">
+            <button onclick="DataService.toggleServicio('${s.id}')" class="w-8 h-8 rounded-lg flex items-center justify-center transition ${isPaid ? 'bg-emerald-500 text-white' : 'bg-slate-800 border border-sky-400/20 text-slate-400 hover:bg-blue-600/30 hover:text-white'}">
               <i class="fa-solid fa-check text-sm"></i>
             </button>
             <div>
               <h4 class="text-sm font-semibold ${isPaid ? 'text-slate-400 line-through' : 'text-white'}">${s.servicio}</h4>
               <div class="flex items-center gap-2 mt-1">
                 ${statusBadge}
-                ${s.comprobante_url ? `<a href="${s.comprobante_url}" target="_blank" class="text-xs text-indigo-400 hover:underline"><i class="fa-solid fa-paperclip"></i> Voucher</a>` : ''}
+                ${s.comprobante_url ? `<a href="${s.comprobante_url}" target="_blank" class="text-xs text-cyan-300 hover:underline"><i class="fa-solid fa-paperclip"></i> Voucher</a>` : ''}
               </div>
             </div>
           </div>
           <div class="flex items-center justify-between md:justify-end gap-3">
             <span class="text-base font-bold ${isPaid ? 'text-slate-400' : 'text-white'}">${UI.formatCurrency(s.monto)}</span>
             <div class="flex items-center gap-1.5">
-              <button onclick="abrirModalEditarServicio('${s.id}')" class="text-slate-400 hover:text-indigo-400 p-2 rounded-lg hover:bg-slate-700/50 transition" title="Editar servicio">
+              <button onclick="abrirModalEditarServicio('${s.id}')" class="text-slate-400 hover:text-cyan-300 p-2 rounded-lg hover:bg-slate-800 transition" title="Editar servicio">
                 <i class="fa-solid fa-pen-to-square"></i>
               </button>
-              <label class="cursor-pointer text-slate-400 hover:text-indigo-400 p-2 rounded-lg hover:bg-slate-700/50 transition" title="Subir comprobante">
+              <label class="cursor-pointer text-slate-400 hover:text-cyan-300 p-2 rounded-lg hover:bg-slate-800 transition" title="Subir comprobante">
                 <i class="fa-solid fa-cloud-arrow-up"></i>
                 <input type="file" accept="image/*,.pdf" class="hidden" onchange="DataService.uploadVoucher('${s.id}', this.files[0])">
               </label>
-              <button onclick="DataService.deleteServicio('${s.id}')" class="text-slate-500 hover:text-rose-400 p-2 rounded-lg hover:bg-slate-700/50 transition" title="Eliminar">
+              <button onclick="DataService.deleteServicio('${s.id}')" class="text-slate-500 hover:text-rose-400 p-2 rounded-lg hover:bg-slate-800 transition" title="Eliminar">
                 <i class="fa-regular fa-trash-can"></i>
               </button>
             </div>
@@ -1156,7 +1869,6 @@ const UI = {
     const containerTarjetas = document.getElementById('list-tarjetas');
     const containerPrestamos = document.getElementById('list-prestamos');
 
-    // Totales y resumen de deudas
     let totalDeudaRestante = 0;
     let cuotasMesTotal = 0;
     let activasCount = 0;
@@ -1188,39 +1900,39 @@ const UI = {
 
     if (containerTarjetas) {
       if (AppState.data.tarjetas.length === 0) {
-        containerTarjetas.innerHTML = `<p class="text-sm text-slate-500 py-4 text-center col-span-2">No hay compras en cuotas activas.</p>`;
+        containerTarjetas.innerHTML = `<p class="text-sm text-slate-400 py-4 text-center col-span-2">No hay compras en cuotas activas.</p>`;
       } else {
         containerTarjetas.innerHTML = AppState.data.tarjetas.map(t => {
           const restCuotas = Math.max(0, (t.cuotas_totales || 1) - (t.cuotas_pagadas || 0));
           const restMonto = restCuotas * (parseFloat(t.monto_cuota) || 0);
           const pct = Math.min(100, Math.round(((t.cuotas_pagadas || 0) / (t.cuotas_totales || 1)) * 100));
           return `
-            <div class="p-4 bg-slate-800/60 rounded-2xl border border-slate-700/50 space-y-3">
+            <div class="p-4 glass-subcard rounded-2xl space-y-3">
               <div class="flex justify-between items-start">
                 <div>
                   <h4 class="font-bold text-white text-sm">${t.compra}</h4>
                   <span class="text-xs text-slate-400">${t.cuotas_pagadas || 0}/${t.cuotas_totales} cuotas pagadas (${pct}%)</span>
                 </div>
                 <div class="text-right">
-                  <span class="text-sm font-extrabold text-indigo-400 block">${UI.formatCurrency(t.monto_cuota)} / mes</span>
+                  <span class="text-sm font-extrabold text-sky-300 block">${UI.formatCurrency(t.monto_cuota)} / mes</span>
                   <span class="text-[11px] text-slate-400">Resta: ${UI.formatCurrency(restMonto)}</span>
                 </div>
               </div>
-              <div class="w-full bg-slate-700 h-2 rounded-full overflow-hidden">
-                <div class="bg-indigo-500 h-full rounded-full transition-all duration-500" style="width: ${pct}%"></div>
+              <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                <div class="bg-blue-500 h-full rounded-full transition-all duration-500" style="width: ${pct}%"></div>
               </div>
               <div class="flex justify-between items-center pt-1">
                 <span class="text-xs text-slate-400">Total: ${UI.formatCurrency(t.monto_total)}</span>
                 <div class="flex items-center gap-1.5">
                   ${(t.cuotas_pagadas || 0) < t.cuotas_totales ? `
-                    <button onclick="abrirModalPagarCuota('${t.id}', 'tarjeta')" class="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold rounded-lg text-white transition active:scale-95">
+                    <button onclick="abrirModalPagarCuota('${t.id}', 'tarjeta')" class="px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-xs font-semibold rounded-lg text-white transition active:scale-95">
                       Pagar Cuota
                     </button>
                   ` : `<span class="text-xs text-emerald-400 font-semibold px-2">Completado</span>`}
-                  <button onclick="abrirModalEditarDeuda('${t.id}', 'tarjeta')" class="text-slate-400 hover:text-indigo-300 p-1.5 rounded-lg hover:bg-slate-700/50 transition" title="Editar deuda">
+                  <button onclick="abrirModalEditarDeuda('${t.id}', 'tarjeta')" class="text-slate-400 hover:text-cyan-300 p-1.5 rounded-lg hover:bg-slate-800 transition" title="Editar deuda">
                     <i class="fa-solid fa-pen-to-square"></i>
                   </button>
-                  <button onclick="DataService.deleteDeuda('${t.id}', 'tarjeta')" class="text-slate-500 hover:text-rose-400 p-1.5 rounded-lg hover:bg-slate-700/50 transition" title="Eliminar">
+                  <button onclick="DataService.deleteDeuda('${t.id}', 'tarjeta')" class="text-slate-500 hover:text-rose-400 p-1.5 rounded-lg hover:bg-slate-800 transition" title="Eliminar">
                     <i class="fa-regular fa-trash-can"></i>
                   </button>
                 </div>
@@ -1233,39 +1945,39 @@ const UI = {
 
     if (containerPrestamos) {
       if (AppState.data.prestamos.length === 0) {
-        containerPrestamos.innerHTML = `<p class="text-sm text-slate-500 py-4 text-center col-span-2">No hay préstamos activos.</p>`;
+        containerPrestamos.innerHTML = `<p class="text-sm text-slate-400 py-4 text-center col-span-2">No hay préstamos activos.</p>`;
       } else {
         containerPrestamos.innerHTML = AppState.data.prestamos.map(p => {
           const restCuotas = Math.max(0, (p.cuotas_totales || 1) - (p.cuotas_pagadas || 0));
           const restMonto = restCuotas * (parseFloat(p.monto_cuota) || 0);
           const pct = Math.min(100, Math.round(((p.cuotas_pagadas || 0) / (p.cuotas_totales || 1)) * 100));
           return `
-            <div class="p-4 bg-slate-800/60 rounded-2xl border border-slate-700/50 space-y-3">
+            <div class="p-4 glass-subcard rounded-2xl space-y-3">
               <div class="flex justify-between items-start">
                 <div>
                   <h4 class="font-bold text-white text-sm">${p.prestamo}</h4>
                   <span class="text-xs text-slate-400">${p.cuotas_pagadas || 0}/${p.cuotas_totales} cuotas abonadas (${pct}%)</span>
                 </div>
                 <div class="text-right">
-                  <span class="text-sm font-extrabold text-violet-400 block">${UI.formatCurrency(p.monto_cuota)} / mes</span>
+                  <span class="text-sm font-extrabold text-cyan-300 block">${UI.formatCurrency(p.monto_cuota)} / mes</span>
                   <span class="text-[11px] text-slate-400">Resta: ${UI.formatCurrency(restMonto)}</span>
                 </div>
               </div>
-              <div class="w-full bg-slate-700 h-2 rounded-full overflow-hidden">
-                <div class="bg-violet-500 h-full rounded-full transition-all duration-500" style="width: ${pct}%"></div>
+              <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                <div class="bg-cyan-400 h-full rounded-full transition-all duration-500" style="width: ${pct}%"></div>
               </div>
               <div class="flex justify-between items-center pt-1">
                 <span class="text-xs text-slate-400">Total: ${UI.formatCurrency(p.monto_total)}</span>
                 <div class="flex items-center gap-1.5">
                   ${(p.cuotas_pagadas || 0) < p.cuotas_totales ? `
-                    <button onclick="abrirModalPagarCuota('${p.id}', 'prestamo')" class="px-2.5 py-1 bg-violet-600 hover:bg-violet-500 text-xs font-semibold rounded-lg text-white transition active:scale-95">
+                    <button onclick="abrirModalPagarCuota('${p.id}', 'prestamo')" class="px-2.5 py-1 bg-cyan-600 hover:bg-cyan-500 text-xs font-semibold rounded-lg text-white transition active:scale-95">
                       Pagar Cuota
                     </button>
                   ` : `<span class="text-xs text-emerald-400 font-semibold px-2">Cancelado</span>`}
-                  <button onclick="abrirModalEditarDeuda('${p.id}', 'prestamo')" class="text-slate-400 hover:text-violet-300 p-1.5 rounded-lg hover:bg-slate-700/50 transition" title="Editar préstamo">
+                  <button onclick="abrirModalEditarDeuda('${p.id}', 'prestamo')" class="text-slate-400 hover:text-cyan-300 p-1.5 rounded-lg hover:bg-slate-800 transition" title="Editar préstamo">
                     <i class="fa-solid fa-pen-to-square"></i>
                   </button>
-                  <button onclick="DataService.deleteDeuda('${p.id}', 'prestamo')" class="text-slate-500 hover:text-rose-400 p-1.5 rounded-lg hover:bg-slate-700/50 transition" title="Eliminar">
+                  <button onclick="DataService.deleteDeuda('${p.id}', 'prestamo')" class="text-slate-500 hover:text-rose-400 p-1.5 rounded-lg hover:bg-slate-800 transition" title="Eliminar">
                     <i class="fa-regular fa-trash-can"></i>
                   </button>
                 </div>
@@ -1282,7 +1994,7 @@ const UI = {
     if (!container) return;
 
     if (AppState.data.historial.length === 0) {
-      container.innerHTML = `<div class="text-center py-8 text-slate-500"><i class="fa-solid fa-clock-rotate-left text-3xl mb-2"></i><p>Sin movimientos recientes.</p></div>`;
+      container.innerHTML = `<div class="text-center py-8 text-slate-400"><i class="fa-solid fa-clock-rotate-left text-3xl mb-2 text-sky-400/60"></i><p>Sin movimientos recientes.</p></div>`;
       return;
     }
 
@@ -1291,14 +2003,14 @@ const UI = {
       const isPositive = !isTransfer && (h.categoria.toLowerCase().includes('ingreso') || h.monto > 0);
       
       let icon = isPositive ? 'fa-arrow-down' : 'fa-arrow-up';
-      let iconColor = isPositive ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400';
+      let iconColor = isPositive ? 'bg-emerald-500/10 text-emerald-400' : 'bg-blue-500/15 text-sky-300';
       if (isTransfer) {
         icon = 'fa-right-left';
-        iconColor = 'bg-blue-500/10 text-blue-400';
+        iconColor = 'bg-cyan-500/10 text-cyan-300';
       }
 
       return `
-        <div class="flex items-center justify-between p-3.5 bg-slate-800/40 rounded-xl border border-slate-700/40 text-sm">
+        <div class="flex items-center justify-between p-3.5 glass-subcard rounded-xl text-sm">
           <div class="flex items-center gap-3">
             <div class="w-9 h-9 rounded-lg ${iconColor} flex items-center justify-center font-bold text-xs">
               <i class="fa-solid ${icon}"></i>
@@ -1308,7 +2020,7 @@ const UI = {
               <span class="text-xs text-slate-400">${h.categoria} • ${h.metodo} • ${h.fecha}</span>
             </div>
           </div>
-          <span class="font-bold ${isTransfer ? 'text-blue-400' : (isPositive ? 'text-emerald-400' : 'text-slate-300')}">
+          <span class="font-bold ${isTransfer ? 'text-cyan-300' : (isPositive ? 'text-emerald-400' : 'text-slate-300')}">
             ${isPositive ? '+' : (isTransfer ? '🔄 ' : '')}${UI.formatCurrency(h.monto)}
           </span>
         </div>
@@ -1324,7 +2036,6 @@ const UI = {
       if (current && AppState.data.metodos.includes(current)) sel.value = current;
     });
 
-    // Configurar sugerencias automáticas para traspaso
     const selOrigen = document.getElementById('in-traspaso-origen');
     const selDestino = document.getElementById('in-traspaso-destino');
     if (selOrigen && !selOrigen.value && AppState.data.metodos.includes('Santander')) {
@@ -1341,8 +2052,8 @@ const UI = {
     if (!container) return;
 
     container.innerHTML = AppState.data.metodos.map(m => `
-      <div class="flex items-center justify-between p-2.5 bg-slate-800 rounded-lg border border-slate-700 text-sm">
-        <span class="text-slate-300"><i class="fa-solid fa-wallet text-indigo-400 mr-2"></i>${m}</span>
+      <div class="flex items-center justify-between p-2.5 glass-subcard rounded-lg text-sm">
+        <span class="text-slate-200"><i class="fa-solid fa-wallet text-sky-400 mr-2"></i>${m}</span>
         <button onclick="DataService.deleteMetodo('${m}')" class="text-slate-500 hover:text-rose-400 p-1">
           <i class="fa-regular fa-trash-can"></i>
         </button>
@@ -1369,7 +2080,7 @@ const UI = {
 
     banner.textContent = message;
     banner.className = `fixed bottom-20 left-1/2 -translate-x-1/2 px-5 py-2.5 rounded-full text-xs font-semibold text-white shadow-xl transition-all duration-300 z-50 ${
-      type === 'success' ? 'bg-emerald-600' : type === 'error' ? 'bg-rose-600' : type === 'warning' ? 'bg-amber-600' : 'bg-indigo-600'
+      type === 'success' ? 'bg-emerald-600' : type === 'error' ? 'bg-rose-600' : type === 'warning' ? 'bg-amber-600' : 'bg-blue-600'
     }`;
     banner.style.opacity = '1';
     banner.style.transform = 'translate(-50%, 0)';
@@ -1386,6 +2097,7 @@ const UI = {
 // ==============================================================================
 
 window.addEventListener('DOMContentLoaded', () => {
+  UI.updateMonthLabel();
   DataService.loadAllData();
 
   // Al volver a la app (desde otra app o pestaña), refrescar datos del servidor

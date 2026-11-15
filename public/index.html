@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="es" class="h-full bg-slate-950">
+<html lang="es" class="h-full bg-[#050D1E]">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -10,15 +10,15 @@
   <link rel="apple-touch-icon" href="https://img.icons8.com/color/512/wallet--v1.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="theme-color" content="#020617">
+  <meta name="theme-color" content="#050D1E">
   <link rel="manifest" href="/manifest.json">
 
-  <!-- Tailwind CSS & FontAwesome -->
+  <!-- Tailwind CSS, Inter & Plus Jakarta Sans, FontAwesome -->
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
 
   <!-- Chart.js & Supabase JS SDK -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -28,14 +28,15 @@
     tailwind.config = {
       theme: {
         extend: {
-          fontFamily: { sans: ['Plus Jakarta Sans', 'sans-serif'] },
+          fontFamily: {
+            sans: ['Plus Jakarta Sans', 'Inter', 'sans-serif'],
+            mono: ['Inter', 'monospace']
+          },
           colors: {
-            brand: {
-              50: '#eef2ff',
-              500: '#6366f1',
-              600: '#4f46e5',
-              700: '#4338ca'
-            }
+            abyss: '#050D1E',
+            cobalt: '#2563EB',
+            cyanpulse: '#06B6D4',
+            skyline: '#38BDF8'
           }
         }
       }
@@ -43,173 +44,373 @@
   </script>
 
   <style>
-    body { font-family: 'Plus Jakarta Sans', sans-serif; }
+    body {
+      font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
+      background-color: #050D1E;
+      color: #DAE2FB;
+      font-variant-numeric: tabular-nums;
+    }
     .glass-panel {
-      background: rgba(15, 23, 42, 0.75);
-      backdrop-filter: blur(16px);
-      border: 1px solid rgba(255, 255, 255, 0.07);
+      background: rgba(11, 23, 48, 0.72);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      border: 1px solid rgba(56, 189, 248, 0.14);
+      box-shadow: 0 12px 32px -10px rgba(3, 9, 23, 0.75);
+    }
+    .glass-panel:hover {
+      border-color: rgba(56, 189, 248, 0.28);
+    }
+    .glass-subcard {
+      background: rgba(6, 14, 31, 0.65);
+      border: 1px solid rgba(56, 189, 248, 0.12);
     }
     .active-nav {
-      background: #4f46e5 !important;
-      color: #ffffff !important;
-      font-weight: 600;
-      box-shadow: 0 4px 15px rgba(79, 70, 229, 0.35);
+      background: rgba(37, 99, 235, 0.25) !important;
+      color: #4CD7F6 !important;
+      border: 1px solid rgba(76, 215, 246, 0.35);
+      font-weight: 700;
+      box-shadow: 0 0 16px rgba(37, 99, 235, 0.35);
+    }
+    .pulse-dot {
+      box-shadow: 0 0 0 0 rgba(78, 222, 163, 0.7);
+      animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    @keyframes pulse-ring {
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(78, 222, 163, 0.7); }
+      70% { transform: scale(1.1); box-shadow: 0 0 0 7px rgba(78, 222, 163, 0); }
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(78, 222, 163, 0); }
     }
     .custom-scrollbar::-webkit-scrollbar { width: 6px; }
     .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-    .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 999px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #1e3a5f; border-radius: 999px; }
   </style>
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col pb-28 md:pb-12">
+<body class="bg-[#050D1E] text-slate-100 min-h-screen flex flex-col pb-28 md:pb-28 relative overflow-x-hidden">
 
-  <!-- ================= TOP HEADER ================= -->
-  <header class="sticky top-0 z-40 glass-panel border-b border-slate-800/80 px-4 py-3.5">
-    <div class="max-w-5xl mx-auto flex items-center justify-between">
-      <div class="flex items-center gap-3">
-        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center text-white shadow-lg shadow-indigo-500/20">
+  <!-- Ambient Blue Glows (Obsidian Horizon) -->
+  <div class="fixed inset-0 pointer-events-none overflow-hidden -z-10">
+    <div class="absolute -top-36 -left-36 w-96 h-96 bg-blue-600/20 rounded-full blur-[130px]"></div>
+    <div class="absolute top-1/3 -right-28 w-[28rem] h-[28rem] bg-cyan-500/15 rounded-full blur-[150px]"></div>
+    <div class="absolute bottom-10 left-1/4 w-[32rem] h-[32rem] bg-sky-600/10 rounded-full blur-[170px]"></div>
+  </div>
+
+  <!-- ================= TOP HEADER (VISUAL-FIRST) ================= -->
+  <header class="sticky top-0 z-40 bg-[#071024]/85 backdrop-blur-xl border-b border-sky-400/15 px-4 py-3.5">
+    <div class="max-w-6xl mx-auto flex items-center justify-between gap-3">
+      <div class="flex items-center gap-3.5">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 via-sky-500 to-cyan-400 flex items-center justify-center text-[#050D1E] shadow-[0_0_18px_rgba(56,189,248,0.35)]">
           <i class="fa-solid fa-wallet text-lg"></i>
         </div>
         <div>
-          <h1 class="text-base font-bold text-white tracking-tight leading-tight">Control Financiero <span class="text-indigo-400">Pro</span></h1>
-          <div class="flex items-center gap-1.5 text-xs text-slate-400">
-            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-            <span>En línea</span>
+          <h1 class="text-base sm:text-lg font-extrabold text-white tracking-tight leading-tight">
+            Control Financiero <span class="text-cyan-400">Pro</span>
+          </h1>
+          <div class="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5">
+            <span class="inline-flex items-center gap-1.5 text-emerald-400 font-medium">
+              <span class="w-2 h-2 rounded-full bg-emerald-400 pulse-dot"></span>
+              Sincronizado • Sheets &amp; Supabase
+            </span>
           </div>
         </div>
       </div>
 
-      <!-- Header Quick Actions -->
-      <div class="flex items-center gap-2">
-        <button onclick="document.getElementById('modal-add-ingreso').classList.remove('hidden')" class="px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition">
-          <i class="fa-solid fa-plus"></i> <span class="hidden sm:inline">Ingreso</span>
-        </button>
-        <button onclick="document.getElementById('modal-add-gasto').classList.remove('hidden')" class="px-3 py-1.5 bg-rose-600/20 hover:bg-rose-600/30 text-rose-400 border border-rose-500/30 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition">
-          <i class="fa-solid fa-minus"></i> <span class="hidden sm:inline">Gasto</span>
+      <!-- Period Indicator & Refresh Action -->
+      <div class="flex items-center gap-2.5 sm:gap-3">
+        <div class="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#0B1730]/80 border border-sky-400/20 text-xs text-slate-200 font-semibold">
+          <i class="fa-regular fa-calendar text-cyan-400"></i>
+          <span id="header-current-month">Mes Actual</span>
+        </div>
+        <span id="sync-last-update" class="hidden md:inline text-[11px] text-slate-400">En tiempo real</span>
+        <button id="btn-refresh-data" onclick="DataService.refreshAll(this)" class="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-3.5 py-2 rounded-xl text-xs font-semibold border border-sky-400/40 shadow-[0_0_16px_rgba(37,99,235,0.4)] active:scale-95 transition-all">
+          <i class="fa-solid fa-arrows-rotate"></i>
+          <span class="hidden sm:inline">Actualizar</span>
         </button>
       </div>
     </div>
   </header>
 
   <!-- ================= MAIN CONTENT VIEWS ================= -->
-  <main class="flex-1 max-w-5xl w-full mx-auto p-4 md:p-6 space-y-6">
+  <main class="flex-1 max-w-6xl w-full mx-auto p-4 md:p-6 space-y-6">
 
-    <!-- 1. DASHBOARD VIEW -->
+    <!-- 1. DASHBOARD VIEW (BENTO ANALYTICS) -->
     <section id="tab-dashboard" class="tab-content space-y-6">
-      <!-- Balance Card -->
-      <div class="relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-900/60 via-slate-900/80 to-slate-900 border border-indigo-500/20 p-6 shadow-2xl">
-        <div class="absolute -top-12 -right-12 w-48 h-48 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
-        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+
+      <!-- ROW 1: HERO SALDO DISPONIBLE (7 cols) + ¿LLEGO A FIN DE MES? (5 cols) -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+
+        <!-- HERO CARD: SALDO REAL DISPONIBLE & BILLETERAS -->
+        <div class="lg:col-span-7 glass-panel rounded-2xl p-5 sm:p-6 relative overflow-hidden flex flex-col justify-between transition-all">
+          <div class="absolute -right-14 -top-14 w-52 h-52 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none"></div>
           <div>
-            <span class="text-xs font-medium text-indigo-300 uppercase tracking-wider flex items-center gap-1.5">
-              <i class="fa-solid fa-shield-halved"></i> Saldo Real Disponible
-            </span>
-            <div onclick="abrirModalAjustarSaldo()" class="text-3xl sm:text-4xl font-extrabold text-white mt-1.5 tracking-tight cursor-pointer hover:text-emerald-300 transition flex items-center gap-2 group" title="Toca para ajustar directamente tu capital">
-              <span id="metric-saldo-real">$0</span>
-              <i class="fa-solid fa-pen-to-square text-xs opacity-50 group-hover:opacity-100 text-emerald-400"></i>
+            <div class="flex items-center justify-between gap-3 mb-2">
+              <div class="flex items-center gap-2">
+                <span class="w-1.5 h-4 bg-cyan-400 rounded-full"></span>
+                <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Saldo Real Disponible</span>
+              </div>
+              <span id="metric-liquidez-badge" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-sky-500/10 text-sky-300 border border-sky-400/25">
+                <i class="fa-solid fa-shield-halved text-[10px]"></i> Liquidez Actual
+              </span>
             </div>
-            <p class="text-xs text-slate-400 mt-1">Dinero real disponible en tus cuentas y bancos</p>
-            <button onclick="abrirModalAjustarSaldo()" class="mt-2.5 px-3 py-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 rounded-xl text-xs font-bold flex items-center gap-1.5 transition active:scale-95 shadow-sm">
-              <i class="fa-solid fa-sliders"></i> Ajustar Capital / Saldo Real
-            </button>
+
+            <div class="flex items-baseline gap-2.5 mb-5">
+              <span id="metric-saldo-real" class="text-4xl sm:text-5xl font-extrabold text-white tracking-tight">$0</span>
+              <span class="text-xs font-semibold text-slate-400">ARS</span>
+            </div>
+
+            <!-- Desglose por Cuentas / Billeteras (Dinámico) -->
+            <div id="dashboard-wallets-grid" class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
+              <!-- Inyectado dinámicamente por JS -->
+            </div>
           </div>
-          <div class="bg-slate-800/80 border border-slate-700/60 rounded-2xl p-3.5 text-right w-full sm:w-auto">
-            <span class="text-xs text-slate-400">Saldo Proyectado Fin de Mes</span>
-            <div id="metric-saldo-proyectado" class="text-lg font-bold text-indigo-400">$0</div>
+
+          <!-- 3 KPIs Sub-Row -->
+          <div class="grid grid-cols-3 gap-3 pt-4 border-t border-sky-400/15">
+            <div class="flex items-center gap-2.5">
+              <div class="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-400/25 flex items-center justify-center shrink-0 text-emerald-400">
+                <i class="fa-solid fa-arrow-trend-up text-sm"></i>
+              </div>
+              <div class="min-w-0">
+                <span class="text-[11px] text-slate-400 block truncate">Fondos / Ingresos</span>
+                <span id="metric-ingresos" class="text-sm sm:text-base font-bold text-emerald-400 truncate block">$0</span>
+              </div>
+            </div>
+            <div class="flex items-center gap-2.5">
+              <div class="w-9 h-9 rounded-xl bg-blue-500/15 border border-blue-400/30 flex items-center justify-center shrink-0 text-sky-400">
+                <i class="fa-solid fa-arrow-trend-down text-sm"></i>
+              </div>
+              <div class="min-w-0">
+                <span class="text-[11px] text-slate-400 block truncate">Gastos del Mes</span>
+                <span id="metric-gastos-mes" class="text-sm sm:text-base font-bold text-white truncate block">$0</span>
+                <span id="metric-gastos-diarios" class="hidden">$0</span>
+              </div>
+            </div>
+            <div class="flex items-center gap-2.5">
+              <div class="w-9 h-9 rounded-xl bg-cyan-500/10 border border-cyan-400/25 flex items-center justify-center shrink-0 text-cyan-300">
+                <i class="fa-regular fa-clock text-sm"></i>
+              </div>
+              <div class="min-w-0">
+                <span class="text-[11px] text-slate-400 block truncate">Total por Pagar</span>
+                <span id="metric-total-por-pagar" class="text-sm sm:text-base font-bold text-cyan-300 truncate block">$0</span>
+                <span id="metric-servicios-fijos" class="hidden">$0</span>
+              </div>
+            </div>
           </div>
         </div>
 
-        <!-- Metric Grid -->
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6 pt-6 border-t border-slate-800/80">
-          <div class="p-3 bg-slate-800/40 rounded-xl border border-slate-700/30">
-            <span class="text-xs text-slate-400 block"><i class="fa-solid fa-arrow-trend-up text-emerald-400 mr-1"></i> Ingresos</span>
-            <span id="metric-ingresos" class="text-sm sm:text-base font-bold text-emerald-400 mt-0.5 block">$0</span>
+        <!-- PREDICTIVE CARD: ¿LLEGO A FIN DE MES? -->
+        <div class="lg:col-span-5 glass-panel rounded-2xl p-5 sm:p-6 relative overflow-hidden flex flex-col justify-between transition-all">
+          <div class="absolute -left-12 -bottom-12 w-48 h-48 bg-blue-600/15 rounded-full blur-3xl pointer-events-none"></div>
+          <div>
+            <div class="flex items-start justify-between gap-3 mb-4">
+              <div>
+                <h2 class="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+                  ¿Llego a fin de mes?
+                </h2>
+                <p class="text-xs text-slate-400 mt-0.5">Cobertura entre saldo disponible y obligaciones</p>
+              </div>
+              <span id="status-fin-mes-badge" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-400/30 text-emerald-300 text-[11px] font-semibold shrink-0">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Calculando...
+              </span>
+            </div>
+
+            <!-- SVG Gauge + Comparative Ledger -->
+            <div class="grid grid-cols-1 sm:grid-cols-12 gap-4 items-center mb-4">
+              <div class="sm:col-span-5 flex flex-col items-center justify-center">
+                <div class="relative w-32 h-32 flex items-center justify-center">
+                  <svg class="w-full h-full -rotate-90" viewBox="0 0 120 120">
+                    <defs>
+                      <linearGradient id="cyanCobaltGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stop-color="#38BDF8" />
+                        <stop offset="55%" stop-color="#2563EB" />
+                        <stop offset="100%" stop-color="#06B6D4" />
+                      </linearGradient>
+                    </defs>
+                    <circle cx="60" cy="60" r="48" fill="none" stroke="rgba(56,189,248,0.14)" stroke-width="10" />
+                    <circle id="gauge-circle-arc" cx="60" cy="60" r="48" fill="none" stroke="url(#cyanCobaltGlow)" stroke-width="10" stroke-linecap="round" stroke-dasharray="301.6" stroke-dashoffset="301.6" class="transition-all duration-700 ease-out" />
+                  </svg>
+                  <div class="absolute inset-0 flex flex-col items-center justify-center text-center">
+                    <span id="gauge-pct-label" class="text-2xl font-extrabold text-white leading-none">0%</span>
+                    <span id="gauge-sub-label" class="text-[10px] font-medium text-slate-400 mt-1">Margen libre</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="sm:col-span-7 space-y-2">
+                <div class="flex items-center justify-between p-2.5 rounded-xl glass-subcard">
+                  <span class="text-xs text-slate-300">Disponible Hoy</span>
+                  <span id="metric-disponible-comp" class="text-sm font-bold text-white">$0</span>
+                </div>
+                <div class="p-2.5 rounded-xl glass-subcard">
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs text-slate-300">Falta Pagar</span>
+                    <span id="metric-pendiente-comp" class="text-sm font-bold text-sky-300">-$0</span>
+                  </div>
+                  <div class="flex items-center justify-between text-[10px] text-slate-400 mt-1">
+                    <span>Serv: <strong id="metric-servicios-pendientes" class="text-slate-300">$0</strong></span>
+                    <span>Cuotas: <strong id="metric-cuotas-pendientes" class="text-slate-300">$0</strong></span>
+                  </div>
+                </div>
+                <div id="fin-mes-result-box" class="p-2.5 rounded-xl bg-blue-600/15 border border-blue-400/30 flex items-center justify-between">
+                  <span id="fin-mes-result-label" class="text-xs font-semibold text-sky-300">Proyección Fin de Mes</span>
+                  <span id="metric-saldo-proyectado" class="text-base font-extrabold text-emerald-400">$0</span>
+                </div>
+              </div>
+            </div>
           </div>
-          <div class="p-3 bg-slate-800/40 rounded-xl border border-slate-700/30">
-            <span class="text-xs text-slate-400 block"><i class="fa-solid fa-bag-shopping text-rose-400 mr-1"></i> Diarios</span>
-            <span id="metric-gastos-diarios" class="text-sm sm:text-base font-bold text-rose-400 mt-0.5 block">$0</span>
-          </div>
-          <div class="p-3 bg-slate-800/40 rounded-xl border border-slate-700/30">
-            <span class="text-xs text-slate-400 block"><i class="fa-solid fa-calendar text-indigo-400 mr-1"></i> Total Fijos</span>
-            <span id="metric-servicios-fijos" class="text-sm sm:text-base font-bold text-white mt-0.5 block">$0</span>
-          </div>
-          <div class="p-3 bg-slate-800/40 rounded-xl border border-slate-700/30">
-            <span class="text-xs text-slate-400 block"><i class="fa-solid fa-hourglass-half text-amber-400 mr-1"></i> Pendientes</span>
-            <span id="metric-servicios-pendientes" class="text-sm sm:text-base font-bold text-amber-400 mt-0.5 block">$0</span>
+
+          <!-- Presupuesto Diario Seguro -->
+          <div class="p-3.5 rounded-xl bg-gradient-to-r from-cyan-500/15 via-blue-600/20 to-[#0B1730] border border-cyan-400/25 flex items-center justify-between gap-3">
+            <div class="flex items-center gap-3">
+              <div class="w-9 h-9 rounded-lg bg-cyan-500/20 text-cyan-300 flex items-center justify-center shrink-0">
+                <i class="fa-solid fa-shield-heart"></i>
+              </div>
+              <div>
+                <div class="text-[11px] font-bold uppercase tracking-wider text-cyan-300">Presupuesto Diario Seguro</div>
+                <div class="text-[11px] text-slate-300">Para los <span id="metric-dias-restantes" class="font-bold text-white">1</span> días restantes del mes</div>
+              </div>
+            </div>
+            <div class="text-right shrink-0">
+              <div id="metric-presupuesto-diario" class="text-lg font-extrabold text-white">$0</div>
+              <span class="text-[10px] text-slate-400">/ día</span>
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- Chart & Quick Summary -->
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div class="glass-panel rounded-3xl p-6">
-          <h3 class="text-sm font-bold text-white mb-4 flex items-center gap-2">
-            <i class="fa-solid fa-chart-pie text-indigo-400"></i> Distribución de Gastos
-          </h3>
-          <div class="h-64 relative">
+      <!-- ROW 2: 3 STATISTICAL CHARTS (4 cols each) -->
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-5">
+
+        <!-- CHART A: Distribución del Mes (Donut) -->
+        <div class="lg:col-span-4 glass-panel rounded-2xl p-5 flex flex-col justify-between transition-all">
+          <div class="flex items-center justify-between mb-3">
+            <div>
+              <h3 class="text-sm font-bold text-white">Distribución del Mes</h3>
+              <p class="text-[11px] text-slate-400">Cómo se reparte tu dinero este mes</p>
+            </div>
+            <i class="fa-solid fa-chart-pie text-cyan-400"></i>
+          </div>
+          <div class="h-56 w-full flex items-center justify-center relative">
             <canvas id="financeChart"></canvas>
           </div>
         </div>
 
-        <!-- Acciones Rápidas -->
-        <div class="glass-panel rounded-3xl p-6 flex flex-col justify-between space-y-4">
+        <!-- CHART B: Flujo Semanal del Mes (Bar Chart) -->
+        <div class="lg:col-span-4 glass-panel rounded-2xl p-5 flex flex-col justify-between transition-all">
+          <div class="flex items-center justify-between mb-3">
+            <div>
+              <h3 class="text-sm font-bold text-white">Flujo Semanal del Mes</h3>
+              <p class="text-[11px] text-slate-400">Entradas vs gastos diarios por semana</p>
+            </div>
+            <i class="fa-solid fa-chart-column text-sky-400"></i>
+          </div>
+          <div class="h-56 w-full flex items-center justify-center relative">
+            <canvas id="flowChart"></canvas>
+          </div>
+        </div>
+
+        <!-- CHART C: Gastos por Método / Cuenta (Progress Bars) -->
+        <div class="lg:col-span-4 glass-panel rounded-2xl p-5 flex flex-col justify-between transition-all">
           <div>
-            <h3 class="text-sm font-bold text-white mb-1.5 flex items-center gap-2">
-              <div class="w-8 h-8 rounded-xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center">
-                <i class="fa-solid fa-bolt"></i>
+            <div class="flex items-center justify-between mb-3">
+              <div>
+                <h3 class="text-sm font-bold text-white">Gastos por Método / Cuenta</h3>
+                <p class="text-[11px] text-slate-400">Consumo ejecutado del mes actual</p>
               </div>
-              Acciones Rápidas
-            </h3>
-            <p class="text-xs text-slate-400">
-              Registra movimientos o gestiona tus cuentas con un solo toque.
-            </p>
+              <i class="fa-solid fa-credit-card text-blue-400"></i>
+            </div>
+            <div id="dashboard-gastos-metodo" class="space-y-3 my-2">
+              <!-- Inyectado por JS -->
+            </div>
           </div>
-
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-            <button onclick="document.getElementById('modal-add-gasto').classList.remove('hidden')" class="w-full py-3 px-3.5 bg-rose-600 hover:bg-rose-500 rounded-2xl text-xs font-bold text-white flex items-center justify-center gap-2 shadow-lg shadow-rose-600/30 transition active:scale-95">
-              <i class="fa-solid fa-plus"></i> Registrar Gasto Diario
-            </button>
-
-            <button onclick="abrirModalTransferirDinero()" class="w-full py-3 px-3.5 bg-blue-600 hover:bg-blue-500 rounded-2xl text-xs font-bold text-white flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30 transition active:scale-95">
-              <i class="fa-solid fa-right-left"></i> Mover Dinero
-            </button>
-
-            <button onclick="document.getElementById('modal-add-ingreso').classList.remove('hidden')" class="w-full py-2.5 px-3 bg-slate-800 hover:bg-slate-700 rounded-2xl text-xs font-semibold text-emerald-400 border border-slate-700 transition flex items-center justify-center gap-2 active:scale-95">
-              <i class="fa-solid fa-wallet"></i> Añadir Fondo / Cuenta
-            </button>
-
-            <button onclick="abrirModalAjustarSaldo()" class="w-full py-2.5 px-3 bg-slate-800 hover:bg-slate-700 rounded-2xl text-xs font-semibold text-slate-300 border border-slate-700 transition flex items-center justify-center gap-2 active:scale-95">
-              <i class="fa-solid fa-sliders"></i> Ajustar Saldo Real
-            </button>
+          <div class="pt-3 border-t border-sky-400/15 flex items-center justify-between text-[11px] text-slate-400 mt-2">
+            <span>Total ejecutado (diarios + pagos)</span>
+            <span id="metric-total-ejecutado" class="font-bold text-sky-300">$0</span>
           </div>
+        </div>
+
+      </div>
+
+      <!-- ROW 3: LO QUE FALTA PAGAR ESTE MES -->
+      <div class="glass-panel rounded-2xl p-5 sm:p-6 transition-all">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+          <div class="flex items-center gap-3">
+            <div class="w-9 h-9 rounded-xl bg-sky-500/15 border border-sky-400/25 flex items-center justify-center text-sky-300">
+              <i class="fa-solid fa-file-invoice-dollar"></i>
+            </div>
+            <div>
+              <h3 class="text-base font-bold text-white">Lo que falta pagar este mes</h3>
+              <p class="text-xs text-slate-400">Servicios pendientes y cuotas de tarjetas/préstamos sin abonar</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-2.5">
+            <span id="pending-count-badge" class="text-xs text-slate-400">0 pendientes</span>
+            <span id="pending-sum-badge" class="px-3 py-1 rounded-full bg-blue-600/20 border border-sky-400/30 text-xs font-bold text-cyan-300">Suma: $0</span>
+          </div>
+        </div>
+        <div id="dashboard-pending-list" class="divide-y divide-sky-400/10">
+          <!-- Inyectado por JS -->
         </div>
       </div>
 
-      <!-- Fondos e Ingresos Registrados en Dashboard -->
-      <div class="glass-panel rounded-3xl p-6 space-y-4">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-2.5">
-            <div class="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
-              <i class="fa-solid fa-money-bill-transfer"></i>
+      <!-- ROW 4: INVERSIONES & PATRIMONIO FUTURO (RENGLÓN DEDICADO) -->
+      <div id="dashboard-inversiones-section" class="glass-panel rounded-2xl p-5 sm:p-6 relative overflow-hidden border-cyan-400/25 bg-gradient-to-br from-[#0B1730]/90 via-[#0E2044]/75 to-[#060E1F]/90 transition-all">
+        <div class="absolute -right-20 -bottom-20 w-72 h-72 bg-blue-600/20 rounded-full blur-[100px] pointer-events-none"></div>
+
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-5 pb-5 border-b border-sky-400/15">
+          <div>
+            <div class="flex items-center gap-2 mb-1">
+              <i class="fa-solid fa-chart-line text-cyan-400"></i>
+              <span class="text-[11px] font-bold uppercase tracking-wider text-cyan-300">Módulo de Capital Estratégico</span>
+            </div>
+            <h2 class="text-xl sm:text-2xl font-extrabold text-white tracking-tight">Inversiones &amp; Patrimonio Futuro</h2>
+            <p class="text-xs text-slate-400 mt-0.5">Espacio reservado para monitorear tu capital invertido, rendimientos y patrimonio neto</p>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-5 sm:gap-8">
+            <div>
+              <span class="text-[11px] text-slate-400 block">Capital Invertido</span>
+              <span id="dash-inv-capital" class="text-lg sm:text-xl font-bold text-white">$0</span>
             </div>
             <div>
-              <h3 class="text-sm font-bold text-white">Fondos e Ingresos Registrados</h3>
-              <p class="text-xs text-slate-400">Tus cuentas y plata cargada en el sistema</p>
+              <span class="text-[11px] text-slate-400 block">Rendimiento / Ganancia</span>
+              <span id="dash-inv-rendimiento" class="text-lg sm:text-xl font-bold text-emerald-400">+0.0%</span>
             </div>
-          </div>
-          <div class="flex items-center gap-2">
-            <button onclick="abrirModalTransferirDinero()" class="px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition active:scale-95 shadow-sm">
-              <i class="fa-solid fa-right-left"></i> Mover Dinero
-            </button>
-            <button onclick="document.getElementById('modal-add-ingreso').classList.remove('hidden')" class="px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition active:scale-95 shadow-sm">
-              <i class="fa-solid fa-plus"></i> Añadir Dinero
-            </button>
+            <div class="pl-4 border-l border-sky-400/25">
+              <span class="text-[11px] text-cyan-300 font-semibold block">Patrimonio Total Neto</span>
+              <span id="dash-patrimonio-neto" class="text-xl sm:text-2xl font-extrabold text-white">$0</span>
+            </div>
           </div>
         </div>
 
+        <div id="dashboard-inversiones-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 mt-5">
+          <!-- Inyectado por JS -->
+        </div>
+
+        <div class="mt-5 pt-3.5 border-t border-sky-400/15 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs text-slate-400">
+          <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-cyan-400"></span>
+            <span id="dash-inv-status-text">Sección lista para tus próximas inversiones desde Google Sheets o la pestaña Inversiones</span>
+          </div>
+          <button onclick="UI.switchTab('inversiones')" class="text-cyan-300 hover:text-cyan-200 font-semibold flex items-center gap-1 transition">
+            <span>Abrir portafolio de inversiones</span>
+            <i class="fa-solid fa-chevron-right text-[10px]"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- ROW 5: DETALLE DE FONDOS / CUENTAS REGISTRADAS -->
+      <div class="glass-panel rounded-2xl p-5 sm:p-6">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-sm font-bold text-white flex items-center gap-2">
+            <i class="fa-solid fa-building-columns text-sky-400"></i> Cuentas y Fondos Sincronizados
+          </h3>
+          <span class="text-[11px] text-slate-400">Desde Sheets / Supabase</span>
+        </div>
         <div id="dashboard-recent-ingresos" class="space-y-2.5">
           <!-- Inyectado por JS -->
         </div>
       </div>
+
     </section>
 
     <!-- 2. GASTOS DIARIOS VIEW -->
@@ -217,64 +418,64 @@
       <div class="flex items-center justify-between">
         <div>
           <h2 class="text-lg font-bold text-white">Gastos Diarios</h2>
-          <p class="text-xs text-slate-400">Consumos diarios, supermercado, salidas y compras varias</p>
+          <p class="text-xs text-slate-400">Consumos diarios registrados por Gemini / Sheets o manualmente</p>
         </div>
-        <button onclick="document.getElementById('modal-add-gasto').classList.remove('hidden')" class="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-semibold flex items-center gap-2 transition shadow-lg shadow-rose-600/30">
-          <i class="fa-solid fa-plus"></i> Registrar Gasto
+        <button onclick="document.getElementById('modal-add-gasto').classList.remove('hidden')" class="px-3.5 py-2 bg-blue-600/25 hover:bg-blue-600/40 text-sky-300 border border-sky-400/30 rounded-xl text-xs font-semibold flex items-center gap-2 transition">
+          <i class="fa-solid fa-plus"></i> Agregar manual
         </button>
       </div>
 
-      <div class="glass-panel rounded-3xl p-4 md:p-6">
+      <div class="glass-panel rounded-2xl p-4 md:p-6">
         <div id="list-diarios" class="space-y-2.5">
           <!-- Inyectado por JS -->
         </div>
       </div>
     </section>
 
-    <!-- 4. GASTOS FIJOS / SERVICIOS VIEW -->
+    <!-- 3. GASTOS FIJOS / SERVICIOS VIEW -->
     <section id="tab-servicios" class="tab-content hidden space-y-4">
       <div class="flex items-center justify-between">
         <div>
           <h2 class="text-lg font-bold text-white">Servicios y Gastos Fijos</h2>
           <p class="text-xs text-slate-400">Control de vencimientos mensuales y comprobantes</p>
         </div>
-        <button onclick="document.getElementById('modal-add-servicio').classList.remove('hidden')" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold flex items-center gap-2 transition shadow-lg shadow-indigo-600/30">
+        <button onclick="document.getElementById('modal-add-servicio').classList.remove('hidden')" class="px-3.5 py-2 bg-blue-600/25 hover:bg-blue-600/40 text-sky-300 border border-sky-400/30 rounded-xl text-xs font-semibold flex items-center gap-2 transition">
           <i class="fa-solid fa-plus"></i> Nuevo Servicio
         </button>
       </div>
 
-      <div class="glass-panel rounded-3xl p-4 md:p-6">
+      <div class="glass-panel rounded-2xl p-4 md:p-6">
         <div id="list-servicios" class="space-y-3">
           <!-- Inyectado por JS -->
         </div>
       </div>
     </section>
 
-    <!-- 5. TARJETAS Y PRÉSTAMOS VIEW -->
+    <!-- 4. TARJETAS Y PRÉSTAMOS VIEW -->
     <section id="tab-deudas" class="tab-content hidden space-y-6">
       <div class="flex items-center justify-between">
         <div>
-          <h2 class="text-lg font-bold text-white">Tarjetas & Préstamos</h2>
+          <h2 class="text-lg font-bold text-white">Tarjetas &amp; Préstamos</h2>
           <p class="text-xs text-slate-400">Seguimiento de compras en cuotas, préstamos y compromisos</p>
         </div>
-        <button onclick="document.getElementById('modal-add-deuda').classList.remove('hidden')" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold flex items-center gap-2 transition shadow-lg shadow-indigo-600/30">
+        <button onclick="document.getElementById('modal-add-deuda').classList.remove('hidden')" class="px-3.5 py-2 bg-blue-600/25 hover:bg-blue-600/40 text-sky-300 border border-sky-400/30 rounded-xl text-xs font-semibold flex items-center gap-2 transition">
           <i class="fa-solid fa-plus"></i> Registrar Deuda
         </button>
       </div>
 
       <!-- Resumen de Deudas -->
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div class="glass-panel p-4 rounded-2xl border border-rose-500/20 bg-rose-950/10">
+        <div class="glass-panel p-4 rounded-2xl border-rose-500/25">
           <span class="text-xs text-rose-300 flex items-center gap-1.5"><i class="fa-solid fa-hand-holding-dollar"></i> Total Deuda Pendiente</span>
           <div id="metric-total-deuda" class="text-xl sm:text-2xl font-black text-rose-400 mt-1">$0</div>
           <span class="text-[11px] text-slate-400">Capital restante por saldar</span>
         </div>
-        <div class="glass-panel p-4 rounded-2xl border border-indigo-500/20 bg-indigo-950/10">
-          <span class="text-xs text-indigo-300 flex items-center gap-1.5"><i class="fa-solid fa-calendar-days"></i> Cuotas de Este Mes</span>
-          <div id="metric-cuotas-mes-deuda" class="text-xl sm:text-2xl font-black text-indigo-300 mt-1">$0</div>
+        <div class="glass-panel p-4 rounded-2xl border-sky-500/25">
+          <span class="text-xs text-sky-300 flex items-center gap-1.5"><i class="fa-solid fa-calendar-days"></i> Cuotas de Este Mes</span>
+          <div id="metric-cuotas-mes-deuda" class="text-xl sm:text-2xl font-black text-cyan-300 mt-1">$0</div>
           <span class="text-[11px] text-slate-400">Compromiso mensual actual</span>
         </div>
-        <div class="glass-panel p-4 rounded-2xl border border-slate-700/40 bg-slate-800/40">
+        <div class="glass-panel p-4 rounded-2xl">
           <span class="text-xs text-slate-400 flex items-center gap-1.5"><i class="fa-solid fa-receipt"></i> Deudas Activas</span>
           <div id="metric-deudas-activas" class="text-xl sm:text-2xl font-black text-white mt-1">0</div>
           <span class="text-[11px] text-slate-400">Tarjetas y préstamos en curso</span>
@@ -282,9 +483,9 @@
       </div>
 
       <!-- Tarjetas -->
-      <div class="glass-panel rounded-3xl p-4 md:p-6 space-y-4">
+      <div class="glass-panel rounded-2xl p-4 md:p-6 space-y-4">
         <h3 class="text-sm font-bold text-white flex items-center gap-2">
-          <i class="fa-solid fa-credit-card text-indigo-400"></i> Compras en Tarjeta de Crédito
+          <i class="fa-solid fa-credit-card text-sky-400"></i> Compras en Tarjeta de Crédito
         </h3>
         <div id="list-tarjetas" class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <!-- Inyectado por JS -->
@@ -292,12 +493,63 @@
       </div>
 
       <!-- Préstamos -->
-      <div class="glass-panel rounded-3xl p-4 md:p-6 space-y-4">
+      <div class="glass-panel rounded-2xl p-4 md:p-6 space-y-4">
         <h3 class="text-sm font-bold text-white flex items-center gap-2">
-          <i class="fa-solid fa-hand-holding-dollar text-violet-400"></i> Préstamos y Créditos
+          <i class="fa-solid fa-hand-holding-dollar text-cyan-400"></i> Préstamos y Créditos
         </h3>
         <div id="list-prestamos" class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <!-- Inyectado por JS -->
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. INVERSIONES VIEW -->
+    <section id="tab-inversiones" class="tab-content hidden space-y-6">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-lg font-bold text-white">Portafolio e Inversiones</h2>
+          <p class="text-xs text-slate-400">Control de plazo fijo, acciones/CEDEARs, fondos y activos futuros</p>
+        </div>
+        <button onclick="document.getElementById('modal-add-inversion').classList.remove('hidden')" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-semibold flex items-center gap-2 transition shadow-[0_0_14px_rgba(37,99,235,0.4)]">
+          <i class="fa-solid fa-plus"></i> Agregar Inversión
+        </button>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div class="glass-panel p-4 rounded-2xl">
+          <span class="text-xs text-slate-400 flex items-center gap-1.5"><i class="fa-solid fa-vault text-sky-400"></i> Capital Invertido</span>
+          <div id="inv-total-capital" class="text-xl sm:text-2xl font-black text-white mt-1">$0</div>
+          <span class="text-[11px] text-slate-400">Monto inicial colocado</span>
+        </div>
+        <div class="glass-panel p-4 rounded-2xl border-cyan-400/30">
+          <span class="text-xs text-cyan-300 flex items-center gap-1.5"><i class="fa-solid fa-chart-line"></i> Valor Actual Estimado</span>
+          <div id="inv-total-actual" class="text-xl sm:text-2xl font-black text-cyan-300 mt-1">$0</div>
+          <span class="text-[11px] text-slate-400">Valuación total de cartera</span>
+        </div>
+        <div class="glass-panel p-4 rounded-2xl border-emerald-400/25">
+          <span class="text-xs text-emerald-300 flex items-center gap-1.5"><i class="fa-solid fa-arrow-trend-up"></i> Resultado Acumulado</span>
+          <div id="inv-total-ganancia" class="text-xl sm:text-2xl font-black text-emerald-400 mt-1">$0</div>
+          <span class="text-[11px] text-slate-400">Ganancia o diferencia neta</span>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+        <div class="lg:col-span-5 glass-panel rounded-2xl p-5 flex flex-col justify-between">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-sm font-bold text-white">Distribución por Tipo</h3>
+            <i class="fa-solid fa-chart-pie text-cyan-400"></i>
+          </div>
+          <div class="h-56 w-full flex items-center justify-center relative">
+            <canvas id="investmentsChart"></canvas>
+          </div>
+        </div>
+        <div class="lg:col-span-7 glass-panel rounded-2xl p-5">
+          <h3 class="text-sm font-bold text-white mb-4 flex items-center gap-2">
+            <i class="fa-solid fa-layer-group text-sky-400"></i> Activos Registrados
+          </h3>
+          <div id="list-inversiones" class="space-y-3">
+            <!-- Inyectado por JS -->
+          </div>
         </div>
       </div>
     </section>
@@ -307,11 +559,11 @@
       <div class="flex items-center justify-between">
         <div>
           <h2 class="text-lg font-bold text-white">Historial de Movimientos</h2>
-          <p class="text-xs text-slate-400">Registro cronológico de todas las operaciones</p>
+          <p class="text-xs text-slate-400">Registro cronológico de todas las operaciones sincronizadas</p>
         </div>
       </div>
 
-      <div class="glass-panel rounded-3xl p-4 md:p-6">
+      <div class="glass-panel rounded-2xl p-4 md:p-6">
         <div id="list-historial" class="space-y-2.5">
           <!-- Inyectado por JS -->
         </div>
@@ -322,28 +574,28 @@
     <section id="tab-ajustes" class="tab-content hidden space-y-6">
       <div>
         <h2 class="text-lg font-bold text-white">Ajustes y Cuentas</h2>
-        <p class="text-xs text-slate-400">Preferencias, métodos de pago y estado del sistema</p>
+        <p class="text-xs text-slate-400">Preferencias, métodos de pago y estado de conexión Vercel + Supabase</p>
       </div>
 
-      <!-- Cloud Sync & Status Card (Limpio y Seguro) -->
-      <div class="glass-panel rounded-3xl p-5 border border-slate-800/80 space-y-3">
+      <!-- Cloud Sync & Status Card -->
+      <div class="glass-panel rounded-2xl p-5 space-y-3">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-3">
-            <div class="w-10 h-10 rounded-2xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center text-lg">
+            <div class="w-10 h-10 rounded-2xl bg-cyan-500/10 text-cyan-400 flex items-center justify-center text-lg border border-cyan-400/20">
               <i class="fa-solid fa-cloud-arrow-up"></i>
             </div>
             <div>
               <h3 class="text-sm font-bold text-white">Sincronización en la Nube</h3>
-              <p class="text-xs text-slate-400">Base de datos PostgreSQL en tiempo real</p>
+              <p class="text-xs text-slate-400">Google Sheets ⇄ Supabase (PostgreSQL) • Hosting Vercel</p>
             </div>
           </div>
           <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
             <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> Conectado
           </span>
         </div>
-        <p class="text-xs bg-slate-900/60 p-3 rounded-xl border border-slate-800 text-slate-300">
-          <i class="fa-solid fa-shield-halved text-indigo-400 mr-1.5"></i>
-          Las conexiones técnicas y credenciales están administradas de manera segura y automática en segundo plano.
+        <p class="text-xs bg-[#060E1F]/70 p-3 rounded-xl border border-sky-400/15 text-slate-300">
+          <i class="fa-solid fa-shield-halved text-sky-400 mr-1.5"></i>
+          Las credenciales de Supabase y el sincronizador de Google Sheets siguen activos en segundo plano para que el tablero se actualice automáticamente.
         </p>
 
         <!-- Hidden inputs para compatibilidad con scripts existentes -->
@@ -351,14 +603,32 @@
         <input type="hidden" id="setting-supabase-key">
       </div>
 
-      <!-- Métodos de Pago Gestión -->
-      <div class="glass-panel rounded-3xl p-6 space-y-4">
+      <!-- Herramientas Rápidas de Ajuste -->
+      <div class="glass-panel rounded-2xl p-5 space-y-3">
         <h3 class="text-sm font-bold text-white flex items-center gap-2">
-          <i class="fa-solid fa-wallet text-indigo-400"></i> Métodos de Pago y Cuentas Bancarias
+          <i class="fa-solid fa-sliders text-cyan-400"></i> Acciones Opcionales de Cuenta
+        </h3>
+        <div class="flex flex-wrap gap-2.5">
+          <button onclick="document.getElementById('modal-add-ingreso').classList.remove('hidden')" class="px-3.5 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-400/30 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition">
+            <i class="fa-solid fa-plus"></i> Cargar Ingreso
+          </button>
+          <button onclick="abrirModalTransferirDinero()" class="px-3.5 py-2 bg-blue-600/20 hover:bg-blue-600/30 text-sky-300 border border-sky-400/30 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition">
+            <i class="fa-solid fa-right-left"></i> Transferir entre Cuentas
+          </button>
+          <button onclick="abrirModalAjustarSaldo()" class="px-3.5 py-2 bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 border border-cyan-400/30 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition">
+            <i class="fa-solid fa-scale-balanced"></i> Cuadrar / Reconciliar Saldo
+          </button>
+        </div>
+      </div>
+
+      <!-- Métodos de Pago Gestión -->
+      <div class="glass-panel rounded-2xl p-6 space-y-4">
+        <h3 class="text-sm font-bold text-white flex items-center gap-2">
+          <i class="fa-solid fa-wallet text-sky-400"></i> Métodos de Pago y Cuentas Bancarias
         </h3>
         <div class="flex gap-2">
-          <input type="text" id="new-metodo-name" placeholder="Ej: Banco Galicia, Dólares..." class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
-          <button onclick="handleAddMetodo()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold transition">
+          <input type="text" id="new-metodo-name" placeholder="Ej: Banco Galicia, Dólares..." class="flex-1 bg-[#060E1F] border border-sky-400/20 rounded-xl px-3.5 py-2 text-sm text-white focus:outline-none focus:border-cyan-400">
+          <button onclick="handleAddMetodo()" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-semibold transition">
             Añadir
           </button>
         </div>
@@ -370,31 +640,35 @@
 
   </main>
 
-  <!-- ================= BOTTOM NAVIGATION BAR (FLOATING DOCK) ================= -->
-  <div class="fixed bottom-3 left-0 right-0 z-40 px-3 flex justify-center pointer-events-none">
-    <nav class="w-full max-w-md bg-slate-900/90 backdrop-blur-xl border border-slate-700/60 rounded-3xl p-1.5 shadow-2xl shadow-black/70 pointer-events-auto transition-all">
-      <div class="grid grid-cols-6 gap-1 items-center w-full">
-        <button data-tab="dashboard" class="nav-btn active-nav flex flex-col items-center justify-center py-1.5 px-0.5 rounded-2xl text-slate-400 text-[10px] font-medium transition hover:text-white">
-          <i class="fa-solid fa-house text-sm mb-0.5"></i>
-          <span class="truncate">Inicio</span>
+  <!-- ================= BOTTOM NAVIGATION BAR (FLOATING BLUE GLASS DOCK) ================= -->
+  <div class="fixed bottom-3 left-0 right-0 z-40 px-2 flex justify-center pointer-events-none">
+    <nav class="w-full max-w-xl bg-[#0B1730]/85 backdrop-blur-xl border border-sky-400/25 rounded-full p-1.5 shadow-2xl shadow-black/80 pointer-events-auto transition-all">
+      <div class="grid grid-cols-7 gap-1 items-center w-full">
+        <button data-tab="dashboard" class="nav-btn active-nav flex flex-col items-center justify-center py-1.5 px-1 rounded-full text-slate-400 text-[10px] font-medium transition hover:text-white">
+          <i class="fa-solid fa-chart-simple text-sm mb-0.5"></i>
+          <span class="truncate">Resumen</span>
         </button>
-        <button data-tab="diarios" class="nav-btn flex flex-col items-center justify-center py-1.5 px-0.5 rounded-2xl text-slate-400 text-[10px] font-medium transition hover:text-white">
+        <button data-tab="diarios" class="nav-btn flex flex-col items-center justify-center py-1.5 px-1 rounded-full text-slate-400 text-[10px] font-medium transition hover:text-white">
           <i class="fa-solid fa-cart-shopping text-sm mb-0.5"></i>
           <span class="truncate">Diarios</span>
         </button>
-        <button data-tab="servicios" class="nav-btn flex flex-col items-center justify-center py-1.5 px-0.5 rounded-2xl text-slate-400 text-[10px] font-medium transition hover:text-white">
+        <button data-tab="servicios" class="nav-btn flex flex-col items-center justify-center py-1.5 px-1 rounded-full text-slate-400 text-[10px] font-medium transition hover:text-white">
           <i class="fa-solid fa-calendar-check text-sm mb-0.5"></i>
-          <span class="truncate">Servicios</span>
+          <span class="truncate">Fijos</span>
         </button>
-        <button data-tab="deudas" class="nav-btn flex flex-col items-center justify-center py-1.5 px-0.5 rounded-2xl text-slate-400 text-[10px] font-medium transition hover:text-white">
+        <button data-tab="deudas" class="nav-btn flex flex-col items-center justify-center py-1.5 px-1 rounded-full text-slate-400 text-[10px] font-medium transition hover:text-white">
           <i class="fa-solid fa-credit-card text-sm mb-0.5"></i>
           <span class="truncate">Deudas</span>
         </button>
-        <button data-tab="historial" class="nav-btn flex flex-col items-center justify-center py-1.5 px-0.5 rounded-2xl text-slate-400 text-[10px] font-medium transition hover:text-white">
+        <button data-tab="inversiones" class="nav-btn flex flex-col items-center justify-center py-1.5 px-1 rounded-full text-slate-400 text-[10px] font-medium transition hover:text-white">
+          <i class="fa-solid fa-chart-line text-sm mb-0.5"></i>
+          <span class="truncate">Invers.</span>
+        </button>
+        <button data-tab="historial" class="nav-btn flex flex-col items-center justify-center py-1.5 px-1 rounded-full text-slate-400 text-[10px] font-medium transition hover:text-white">
           <i class="fa-solid fa-clock-rotate-left text-sm mb-0.5"></i>
           <span class="truncate">Historial</span>
         </button>
-        <button data-tab="ajustes" class="nav-btn flex flex-col items-center justify-center py-1.5 px-0.5 rounded-2xl text-slate-400 text-[10px] font-medium transition hover:text-white">
+        <button data-tab="ajustes" class="nav-btn flex flex-col items-center justify-center py-1.5 px-1 rounded-full text-slate-400 text-[10px] font-medium transition hover:text-white">
           <i class="fa-solid fa-gear text-sm mb-0.5"></i>
           <span class="truncate">Ajustes</span>
         </button>
@@ -800,12 +1074,72 @@
     </div>
   </div>
 
+  <!-- Modal Nueva Inversión -->
+  <div id="modal-add-inversion" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-[#0B1730] border border-sky-400/25 rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+      <div class="flex justify-between items-center">
+        <h3 class="text-base font-bold text-white flex items-center gap-2">
+          <i class="fa-solid fa-chart-line text-cyan-400"></i> Registrar Inversión
+        </h3>
+        <button onclick="document.getElementById('modal-add-inversion').classList.add('hidden')" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <form onsubmit="event.preventDefault(); submitInversion();" class="space-y-3">
+        <div>
+          <label class="text-xs text-slate-400 block mb-1">Nombre / Activo</label>
+          <input type="text" id="in-inv-nombre" required placeholder="Ej: Plazo Fijo UVA, CEDEAR SPY, Fondo FIMA" class="w-full bg-[#060E1F] border border-sky-400/20 rounded-xl px-3 py-2 text-sm text-white">
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="text-xs text-slate-400 block mb-1">Tipo</label>
+            <select id="in-inv-tipo" class="w-full bg-[#060E1F] border border-sky-400/20 rounded-xl px-3 py-2 text-sm text-white">
+              <option value="Renta Fija">Renta Fija / Plazo Fijo</option>
+              <option value="Renta Variable">CEDEARs / Acciones</option>
+              <option value="Fondo Común">Fondo / Money Market</option>
+              <option value="Criptoactivos">Cripto / Dólares</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-xs text-slate-400 block mb-1">Plataforma / Banco</label>
+            <input type="text" id="in-inv-plataforma" placeholder="Ej: Mercado Pago, Balanz, Santander" class="w-full bg-[#060E1F] border border-sky-400/20 rounded-xl px-3 py-2 text-sm text-white">
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="text-xs text-slate-400 block mb-1">Capital Invertido ($)</label>
+            <input type="number" step="any" id="in-inv-invertido" required placeholder="0.00" class="w-full bg-[#060E1F] border border-sky-400/20 rounded-xl px-3 py-2 text-sm text-white">
+          </div>
+          <div>
+            <label class="text-xs text-slate-400 block mb-1">Valor Actual ($)</label>
+            <input type="number" step="any" id="in-inv-actual" placeholder="Igual al invertido" class="w-full bg-[#060E1F] border border-sky-400/20 rounded-xl px-3 py-2 text-sm text-white">
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="text-xs text-slate-400 block mb-1">Moneda</label>
+            <select id="in-inv-moneda" class="w-full bg-[#060E1F] border border-sky-400/20 rounded-xl px-3 py-2 text-sm text-white">
+              <option value="ARS">ARS ($)</option>
+              <option value="USD">USD (US$)</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-xs text-slate-400 block mb-1">Notas (opcional)</label>
+            <input type="text" id="in-inv-notas" placeholder="TNA, vencimiento..." class="w-full bg-[#060E1F] border border-sky-400/20 rounded-xl px-3 py-2 text-sm text-white">
+          </div>
+        </div>
+        <div class="flex gap-2 pt-2">
+          <button type="button" onclick="document.getElementById('modal-add-inversion').classList.add('hidden')" class="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 rounded-xl text-xs font-semibold text-slate-300">Cancelar</button>
+          <button type="submit" class="flex-1 py-2.5 bg-blue-600 hover:bg-blue-500 rounded-xl text-xs font-semibold text-white">Guardar Inversión</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- Toast Notification -->
   <div id="toast-notification" class="fixed bottom-20 left-1/2 -translate-x-1/2 px-5 py-2.5 rounded-full text-xs font-semibold text-white shadow-xl opacity-0 pointer-events-none transition-all duration-300 z-50"></div>
 
   <!-- App Scripts -->
-  <script src="/js/supabase-config.js?v=10"></script>
-  <script src="/js/app.js?v=10"></script>
+  <script src="/js/supabase-config.js?v=11"></script>
+  <script src="/js/app.js?v=11"></script>
   <script>
     function submitIngreso() {
       const desc = document.getElementById('in-ingreso-desc').value;
@@ -1093,6 +1427,23 @@
       }
     }
 
+    function submitInversion() {
+      const nombre = document.getElementById('in-inv-nombre').value;
+      const tipo = document.getElementById('in-inv-tipo').value;
+      const plataforma = document.getElementById('in-inv-plataforma').value;
+      const invertido = document.getElementById('in-inv-invertido').value;
+      const actual = document.getElementById('in-inv-actual').value || invertido;
+      const moneda = document.getElementById('in-inv-moneda').value;
+      const notas = document.getElementById('in-inv-notas').value;
+      DataService.addInversion({ nombre, tipo, plataforma, monto_invertido: invertido, valor_actual: actual, moneda, notas });
+      document.getElementById('modal-add-inversion').classList.add('hidden');
+      document.getElementById('in-inv-nombre').value = '';
+      document.getElementById('in-inv-plataforma').value = '';
+      document.getElementById('in-inv-invertido').value = '';
+      document.getElementById('in-inv-actual').value = '';
+      document.getElementById('in-inv-notas').value = '';
+    }
+
     function saveSupabaseSettings() {
       const url = document.getElementById('setting-supabase-url').value;
       const key = document.getElementById('setting-supabase-key').value;
@@ -1102,13 +1453,13 @@
     }
 
     // Limpieza forzada de cachés antiguas en el navegador móvil
-    if ('caches' in window && localStorage.getItem('CFP_CACHE_PURGED_V10') !== 'true') {
+    if ('caches' in window && localStorage.getItem('CFP_CACHE_PURGED_V11') !== 'true') {
       caches.keys().then(keys => {
         return Promise.all(keys.map(k => {
-          if (k !== 'cfp-cache-v10') return caches.delete(k);
+          if (k !== 'cfp-cache-v11') return caches.delete(k);
         }));
       }).then(() => {
-        localStorage.setItem('CFP_CACHE_PURGED_V10', 'true');
+        localStorage.setItem('CFP_CACHE_PURGED_V11', 'true');
         console.log('🧹 Cachés obsoletas eliminadas del dispositivo');
       });
     }
@@ -1116,7 +1467,7 @@
     // Registro de Service Worker para PWA / TWA con auto-actualización forzada
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js?v=10')
+        navigator.serviceWorker.register('/sw.js?v=11')
           .then(reg => {
             console.log('✅ Service Worker PWA registrado:', reg.scope);
             reg.update();
