@@ -9,6 +9,7 @@ const AppState = {
     diarios: [],
     servicios: [],
     tarjetas: [],
+    mercadoCredito: [],
     prestamos: [],
     historial: [],
     inversiones: [],
@@ -75,19 +76,13 @@ const DataService = {
         AppState.data.servicios = (servicios || []).map(s => ({ ...s, monto: parseFloat(s.monto) }));
         
         const rawDeudas = deudas || [];
-        AppState.data.tarjetas = rawDeudas.filter(d => d.tipo === 'tarjeta').map(d => ({
+        const isMercadoCredito = (d) =>
+          d.tipo === 'mercado_credito' ||
+          (d.metodo || '').toLowerCase().includes('mercado cr');
+
+        const mapDeuda = (d) => ({
           id: d.id,
           compra: d.nombre,
-          monto_total: parseFloat(d.monto_total),
-          cuotas_totales: d.cuotas_totales,
-          cuotas_pagadas: d.cuotas_pagadas,
-          monto_cuota: parseFloat(d.monto_cuota),
-          fecha_inicio: d.fecha_inicio,
-          metodo: d.metodo
-        }));
-
-        AppState.data.prestamos = rawDeudas.filter(d => d.tipo === 'prestamo').map(d => ({
-          id: d.id,
           prestamo: d.nombre,
           monto_total: parseFloat(d.monto_total),
           cuotas_totales: d.cuotas_totales,
@@ -95,7 +90,11 @@ const DataService = {
           monto_cuota: parseFloat(d.monto_cuota),
           fecha_inicio: d.fecha_inicio,
           metodo: d.metodo
-        }));
+        });
+
+        AppState.data.tarjetas = rawDeudas.filter(d => !isMercadoCredito(d) && d.tipo === 'tarjeta').map(mapDeuda);
+        AppState.data.mercadoCredito = rawDeudas.filter(d => isMercadoCredito(d)).map(mapDeuda);
+        AppState.data.prestamos = rawDeudas.filter(d => !isMercadoCredito(d) && d.tipo === 'prestamo').map(mapDeuda);
 
         AppState.data.historial = (historial || []).map(h => ({
           ...h,
@@ -220,6 +219,9 @@ const DataService = {
         if (!Array.isArray(AppState.data.inversiones)) {
           AppState.data.inversiones = DataService.loadLocalInversiones();
         }
+        if (!Array.isArray(AppState.data.mercadoCredito)) {
+          AppState.data.mercadoCredito = [];
+        }
       } catch (e) {
         console.error('Error parseando datos locales', e);
       }
@@ -241,6 +243,7 @@ const DataService = {
         tarjetas: [
           { id: '1', compra: 'Notebook', monto_total: 600000, cuotas_totales: 12, cuotas_pagadas: 4, monto_cuota: 50000, fecha_inicio: '2025-10-01', metodo: 'Tarjeta de Crédito' }
         ],
+        mercadoCredito: [],
         prestamos: [],
         historial: [
           { id: '1', fecha: new Date().toLocaleDateString('es-AR'), categoria: 'Ingreso', descripcion: 'Sueldo Principal', monto: 850000, metodo: 'Transferencia' },
@@ -700,28 +703,65 @@ const DataService = {
   },
 
   // -------------------------------------------------------------
-  // DEUDAS (TARJETAS Y PRÉSTAMOS)
+  // DEUDAS (TARJETAS, MERCADO CRÉDITO Y PRÉSTAMOS)
   // -------------------------------------------------------------
+  getDeudaList(tipo) {
+    if (tipo === 'tarjeta') return AppState.data.tarjetas;
+    if (tipo === 'mercado_credito') return AppState.data.mercadoCredito;
+    return AppState.data.prestamos;
+  },
+
+  getDeudaTipoLabel(tipo) {
+    if (tipo === 'tarjeta') return 'Tarjeta de Crédito';
+    if (tipo === 'mercado_credito') return 'Mercado Crédito';
+    return 'Préstamo';
+  },
+
   async addDeuda(tipo, nombre, montoTotal, cuotasTotales, metodo, cuotasPagadas) {
     const total = parseFloat(montoTotal) || 0;
     const cuotas = parseInt(cuotasTotales, 10) || 1;
     const pagadas = parseInt(cuotasPagadas, 10) || 0;
     const montoCuota = total / cuotas;
+    let metodoFinal = metodo || (tipo === 'mercado_credito' ? 'Mercado Crédito' : (tipo === 'tarjeta' ? 'Tarjeta de Crédito' : 'General'));
     const client = SupabaseConfig.client;
 
     if (client && SupabaseConfig.isConfigured()) {
-      const { data, error } = await client.from('deudas').insert([{
+      let { data, error } = await client.from('deudas').insert([{
         tipo,
         nombre,
         monto_total: total,
         cuotas_totales: cuotas,
         cuotas_pagadas: pagadas,
         monto_cuota: montoCuota,
-        metodo: metodo || (tipo === 'tarjeta' ? 'Tarjeta de Crédito' : 'General'),
+        metodo: metodoFinal,
         fecha_inicio: getTodayString()
       }]).select();
 
-      if (!error && data && data[0]) {
+      // Respaldo automático si Supabase aún tiene CHECK (tipo IN ('tarjeta', 'prestamo'))
+      if (error && tipo === 'mercado_credito') {
+        console.warn('Reintentando inserción de Mercado Crédito con respaldo tipo=prestamo:', error.message);
+        metodoFinal = 'Mercado Crédito';
+        const retry = await client.from('deudas').insert([{
+          tipo: 'prestamo',
+          nombre,
+          monto_total: total,
+          cuotas_totales: cuotas,
+          cuotas_pagadas: pagadas,
+          monto_cuota: montoCuota,
+          metodo: metodoFinal,
+          fecha_inicio: getTodayString()
+        }]).select();
+        data = retry.data;
+        error = retry.error;
+      }
+
+      if (error) {
+        console.error('Error al guardar deuda en Supabase:', error);
+        UI.showNotification('Error al guardar deuda: ' + error.message, 'error');
+        return false;
+      }
+
+      if (data && data[0]) {
         const itemFormateado = {
           id: data[0].id,
           compra: data[0].nombre,
@@ -730,10 +770,10 @@ const DataService = {
           cuotas_totales: cuotas,
           cuotas_pagadas: pagadas,
           monto_cuota: montoCuota,
+          fecha_inicio: data[0].fecha_inicio,
           metodo: data[0].metodo
         };
-        if (tipo === 'tarjeta') AppState.data.tarjetas.push(itemFormateado);
-        else AppState.data.prestamos.push(itemFormateado);
+        DataService.getDeudaList(tipo).push(itemFormateado);
       }
     } else {
       const nuevo = {
@@ -744,55 +784,87 @@ const DataService = {
         cuotas_totales: cuotas,
         cuotas_pagadas: pagadas,
         monto_cuota: montoCuota,
-        metodo: metodo || 'General'
+        fecha_inicio: getTodayString(),
+        metodo: metodoFinal
       };
-      if (tipo === 'tarjeta') AppState.data.tarjetas.push(nuevo);
-      else AppState.data.prestamos.push(nuevo);
-      DataService.saveToLocalStorage();
+      DataService.getDeudaList(tipo).push(nuevo);
     }
 
+    DataService.saveToLocalStorage();
     UI.renderAll();
-    UI.showNotification(`${tipo === 'tarjeta' ? 'Tarjeta' : 'Préstamo'} agregado`, 'success');
+    UI.showNotification(`${DataService.getDeudaTipoLabel(tipo)} agregado`, 'success');
+    return true;
   },
 
-  async updateDeuda(id, tipo, { nombre, monto_total, cuotas_totales, cuotas_pagadas, monto_cuota, metodo }) {
+  async updateDeuda(id, tipoOriginal, { tipo, nombre, monto_total, cuotas_totales, cuotas_pagadas, monto_cuota, metodo }) {
+    const nuevoTipo = tipo || tipoOriginal;
     const total = parseFloat(monto_total) || 0;
     const cuotasTot = parseInt(cuotas_totales, 10) || 1;
     const cuotasPag = parseInt(cuotas_pagadas, 10) || 0;
     const valorCuota = monto_cuota ? parseFloat(monto_cuota) : (total / cuotasTot);
+    let metodoFinal = metodo || (nuevoTipo === 'mercado_credito' ? 'Mercado Crédito' : (nuevoTipo === 'tarjeta' ? 'Tarjeta de Crédito' : 'General'));
 
     const client = SupabaseConfig.client;
     if (client && SupabaseConfig.isConfigured()) {
-      await client.from('deudas').update({
+      let { error } = await client.from('deudas').update({
+        tipo: nuevoTipo,
         nombre,
         monto_total: total,
         cuotas_totales: cuotasTot,
         cuotas_pagadas: cuotasPag,
         monto_cuota: valorCuota,
-        metodo: metodo || 'General'
+        metodo: metodoFinal
       }).eq('id', id);
+
+      if (error && nuevoTipo === 'mercado_credito') {
+        console.warn('Reintentando actualización de Mercado Crédito con respaldo tipo=prestamo:', error.message);
+        metodoFinal = 'Mercado Crédito';
+        const retry = await client.from('deudas').update({
+          tipo: 'prestamo',
+          nombre,
+          monto_total: total,
+          cuotas_totales: cuotasTot,
+          cuotas_pagadas: cuotasPag,
+          monto_cuota: valorCuota,
+          metodo: metodoFinal
+        }).eq('id', id);
+        error = retry.error;
+      }
+
+      if (error) {
+        console.error('Error al actualizar deuda en Supabase:', error);
+        UI.showNotification('Error al actualizar deuda: ' + error.message, 'error');
+        return false;
+      }
     }
 
-    const lista = tipo === 'tarjeta' ? AppState.data.tarjetas : AppState.data.prestamos;
-    const item = lista.find(d => d.id === id);
-    if (item) {
+    const listaOriginal = DataService.getDeudaList(tipoOriginal);
+    const idx = listaOriginal.findIndex(d => d.id === id);
+    if (idx !== -1) {
+      const item = listaOriginal[idx];
       item.compra = nombre;
       item.prestamo = nombre;
       item.monto_total = total;
       item.cuotas_totales = cuotasTot;
       item.cuotas_pagadas = cuotasPag;
       item.monto_cuota = valorCuota;
-      item.metodo = metodo || 'General';
+      item.metodo = metodoFinal;
+
+      if (nuevoTipo !== tipoOriginal) {
+        listaOriginal.splice(idx, 1);
+        DataService.getDeudaList(nuevoTipo).push(item);
+      }
     }
 
     DataService.saveToLocalStorage();
-    await DataService.logHistorial('Actualización Deuda', `Actualizado ${nombre} (${cuotasPag}/${cuotasTot} cuotas)`, total, metodo || 'General');
+    await DataService.logHistorial('Actualización Deuda', `Actualizado ${nombre} (${cuotasPag}/${cuotasTot} cuotas)`, total, metodoFinal);
     UI.renderAll();
     UI.showNotification('Deuda actualizada correctamente', 'success');
+    return true;
   },
 
   async pagarCuotaDeuda(id, tipo, montoAbonado, metodoDebitado) {
-    const lista = tipo === 'tarjeta' ? AppState.data.tarjetas : AppState.data.prestamos;
+    const lista = DataService.getDeudaList(tipo);
     const item = lista.find(d => d.id === id);
     if (!item) return false;
 
@@ -826,8 +898,9 @@ const DataService = {
       DataService.saveToLocalStorage();
 
       const nombre = item.compra || item.prestamo;
+      const tipoCategoria = tipo === 'mercado_credito' ? 'Mercado Crédito' : tipo;
       await DataService.logHistorial(
-        `Cuota ${tipo}`,
+        `Cuota ${tipoCategoria}`,
         `Pago cuota ${item.cuotas_pagadas}/${item.cuotas_totales} de ${nombre}`,
         valMonto,
         bancoDebito
@@ -847,6 +920,8 @@ const DataService = {
     }
     if (tipo === 'tarjeta') {
       AppState.data.tarjetas = AppState.data.tarjetas.filter(d => d.id !== id);
+    } else if (tipo === 'mercado_credito') {
+      AppState.data.mercadoCredito = AppState.data.mercadoCredito.filter(d => d.id !== id);
     } else {
       AppState.data.prestamos = AppState.data.prestamos.filter(d => d.id !== id);
     }
@@ -1146,6 +1221,24 @@ const Calculations = {
       });
     });
 
+    let cuotasMercadoCredito = 0;
+    (AppState.data.mercadoCredito || []).forEach(mc => {
+      if ((mc.cuotas_pagadas || 0) >= mc.cuotas_totales) return;
+      if (isCuotaPagadaEsteMes(mc.compra || mc.prestamo)) return;
+      const cuota = parseFloat(mc.monto_cuota) || 0;
+      cuotasMercadoCredito += cuota;
+      compromisosPendientes.push({
+        id: mc.id,
+        tipo: 'mercado_credito',
+        nombre: mc.compra || mc.prestamo,
+        detalle: `Mercado Crédito • Cuota ${(mc.cuotas_pagadas || 0) + 1}/${mc.cuotas_totales}`,
+        monto: cuota,
+        vencimiento: 99,
+        diasRestantes: 99,
+        metodo: mc.metodo || 'Mercado Crédito'
+      });
+    });
+
     let cuotasPrestamos = 0;
     (AppState.data.prestamos || []).forEach(p => {
       if ((p.cuotas_pagadas || 0) >= p.cuotas_totales) return;
@@ -1170,7 +1263,7 @@ const Calculations = {
       .filter(h => (h.categoria || '').toLowerCase().includes('cuota') && Calculations.isCurrentMonth(h.fecha))
       .reduce((sum, h) => sum + Math.abs(parseFloat(h.monto) || 0), 0);
 
-    const totalCuotasPendientes = cuotasTarjetas + cuotasPrestamos;
+    const totalCuotasPendientes = cuotasTarjetas + cuotasMercadoCredito + cuotasPrestamos;
     const totalPorPagar = totalServiciosPendientes + totalCuotasPendientes;
     const totalGastosMes = totalGastosDiarios + totalServiciosPagados + cuotasPagadasMes;
 
@@ -1268,6 +1361,7 @@ const Calculations = {
       totalServiciosPagados,
       totalServiciosPendientes,
       cuotasTarjetas,
+      cuotasMercadoCredito,
       cuotasPrestamos,
       totalCuotasPendientes,
       totalPorPagar,
@@ -1520,7 +1614,7 @@ const UI = {
       Math.max(0, m.totalGastosDiarios),
       Math.max(0, m.totalServiciosPagados),
       Math.max(0, m.totalServiciosPendientes),
-      Math.max(0, m.cuotasTarjetas + m.cuotasPrestamos),
+      Math.max(0, m.cuotasTarjetas + (m.cuotasMercadoCredito || 0) + m.cuotasPrestamos),
       Math.max(0, m.saldoProyectado)
     ];
 
@@ -1667,6 +1761,7 @@ const UI = {
       }
 
       const iconClass = item.tipo === 'tarjeta' ? 'fa-credit-card text-sky-300 bg-blue-500/15 border-sky-400/25'
+        : item.tipo === 'mercado_credito' ? 'fa-bolt text-amber-300 bg-amber-500/15 border-amber-400/25'
         : item.tipo === 'prestamo' ? 'fa-hand-holding-dollar text-cyan-300 bg-cyan-500/15 border-cyan-400/25'
         : 'fa-file-invoice text-amber-300 bg-amber-500/10 border-amber-400/25';
 
@@ -1928,29 +2023,27 @@ const UI = {
 
   renderDeudas() {
     const containerTarjetas = document.getElementById('list-tarjetas');
+    const containerMercadoCredito = document.getElementById('list-mercado-credito');
     const containerPrestamos = document.getElementById('list-prestamos');
 
     let totalDeudaRestante = 0;
     let cuotasMesTotal = 0;
     let activasCount = 0;
 
-    AppState.data.tarjetas.forEach(t => {
-      const restCuotas = Math.max(0, (t.cuotas_totales || 1) - (t.cuotas_pagadas || 0));
-      if (restCuotas > 0) {
-        activasCount++;
-        cuotasMesTotal += (parseFloat(t.monto_cuota) || 0);
-        totalDeudaRestante += restCuotas * (parseFloat(t.monto_cuota) || 0);
-      }
-    });
+    const sumarDeudas = (lista) => {
+      (lista || []).forEach(item => {
+        const restCuotas = Math.max(0, (item.cuotas_totales || 1) - (item.cuotas_pagadas || 0));
+        if (restCuotas > 0) {
+          activasCount++;
+          cuotasMesTotal += (parseFloat(item.monto_cuota) || 0);
+          totalDeudaRestante += restCuotas * (parseFloat(item.monto_cuota) || 0);
+        }
+      });
+    };
 
-    AppState.data.prestamos.forEach(p => {
-      const restCuotas = Math.max(0, (p.cuotas_totales || 1) - (p.cuotas_pagadas || 0));
-      if (restCuotas > 0) {
-        activasCount++;
-        cuotasMesTotal += (parseFloat(p.monto_cuota) || 0);
-        totalDeudaRestante += restCuotas * (parseFloat(p.monto_cuota) || 0);
-      }
-    });
+    sumarDeudas(AppState.data.tarjetas);
+    sumarDeudas(AppState.data.mercadoCredito);
+    sumarDeudas(AppState.data.prestamos);
 
     const elTotalDeuda = document.getElementById('metric-total-deuda');
     const elCuotasMes = document.getElementById('metric-cuotas-mes-deuda');
@@ -1959,48 +2052,82 @@ const UI = {
     if (elCuotasMes) elCuotasMes.textContent = UI.formatCurrency(cuotasMesTotal);
     if (elActivas) elActivas.textContent = activasCount;
 
-    if (containerTarjetas) {
-      if (AppState.data.tarjetas.length === 0) {
-        containerTarjetas.innerHTML = `<p class="text-sm text-slate-400 py-4 text-center col-span-2">No hay compras en cuotas activas.</p>`;
-      } else {
-        containerTarjetas.innerHTML = AppState.data.tarjetas.map(t => {
-          const restCuotas = Math.max(0, (t.cuotas_totales || 1) - (t.cuotas_pagadas || 0));
-          const restMonto = restCuotas * (parseFloat(t.monto_cuota) || 0);
-          const pct = Math.min(100, Math.round(((t.cuotas_pagadas || 0) / (t.cuotas_totales || 1)) * 100));
-          return `
-            <div class="p-4 glass-subcard rounded-2xl space-y-3">
-              <div class="flex justify-between items-start">
-                <div>
-                  <h4 class="font-bold text-white text-sm">${t.compra}</h4>
-                  <span class="text-xs text-slate-400">${t.cuotas_pagadas || 0}/${t.cuotas_totales} cuotas pagadas (${pct}%)</span>
+    const renderDeudaCards = (lista, tipo, opts) => {
+      return lista.map(item => {
+        const nombre = item.compra || item.prestamo;
+        const restCuotas = Math.max(0, (item.cuotas_totales || 1) - (item.cuotas_pagadas || 0));
+        const restMonto = restCuotas * (parseFloat(item.monto_cuota) || 0);
+        const pct = Math.min(100, Math.round(((item.cuotas_pagadas || 0) / (item.cuotas_totales || 1)) * 100));
+        const metodoBadge = item.metodo || opts.defaultMetodo;
+        return `
+          <div class="p-4 glass-subcard rounded-2xl space-y-3">
+            <div class="flex justify-between items-start gap-2">
+              <div class="min-w-0">
+                <div class="flex items-center flex-wrap gap-1.5">
+                  <h4 class="font-bold text-white text-sm truncate">${nombre}</h4>
+                  <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold border ${opts.badgeClass}">${metodoBadge}</span>
                 </div>
-                <div class="text-right">
-                  <span class="text-sm font-extrabold text-sky-300 block">${UI.formatCurrency(t.monto_cuota)} / mes</span>
-                  <span class="text-[11px] text-slate-400">Resta: ${UI.formatCurrency(restMonto)}</span>
-                </div>
+                <span class="text-xs text-slate-400">${item.cuotas_pagadas || 0}/${item.cuotas_totales} cuotas ${opts.cuotaLabel} (${pct}%)</span>
               </div>
-              <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
-                <div class="bg-blue-500 h-full rounded-full transition-all duration-500" style="width: ${pct}%"></div>
-              </div>
-              <div class="flex justify-between items-center pt-1">
-                <span class="text-xs text-slate-400">Total: ${UI.formatCurrency(t.monto_total)}</span>
-                <div class="flex items-center gap-1.5">
-                  ${(t.cuotas_pagadas || 0) < t.cuotas_totales ? `
-                    <button onclick="abrirModalPagarCuota('${t.id}', 'tarjeta')" class="px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-xs font-semibold rounded-lg text-white transition active:scale-95">
-                      Pagar Cuota
-                    </button>
-                  ` : `<span class="text-xs text-emerald-400 font-semibold px-2">Completado</span>`}
-                  <button onclick="abrirModalEditarDeuda('${t.id}', 'tarjeta')" class="text-slate-400 hover:text-cyan-300 p-1.5 rounded-lg hover:bg-slate-800 transition" title="Editar deuda">
-                    <i class="fa-solid fa-pen-to-square"></i>
-                  </button>
-                  <button onclick="DataService.deleteDeuda('${t.id}', 'tarjeta')" class="text-slate-500 hover:text-rose-400 p-1.5 rounded-lg hover:bg-slate-800 transition" title="Eliminar">
-                    <i class="fa-regular fa-trash-can"></i>
-                  </button>
-                </div>
+              <div class="text-right shrink-0">
+                <span class="text-sm font-extrabold ${opts.amountClass} block">${UI.formatCurrency(item.monto_cuota)} / mes</span>
+                <span class="text-[11px] text-slate-400">Resta: ${UI.formatCurrency(restMonto)}</span>
               </div>
             </div>
-          `;
-        }).join('');
+            <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+              <div class="${opts.barClass} h-full rounded-full transition-all duration-500" style="width: ${pct}%"></div>
+            </div>
+            <div class="flex justify-between items-center pt-1">
+              <span class="text-xs text-slate-400">Total: ${UI.formatCurrency(item.monto_total)}</span>
+              <div class="flex items-center gap-1.5">
+                ${(item.cuotas_pagadas || 0) < item.cuotas_totales ? `
+                  <button onclick="abrirModalPagarCuota('${item.id}', '${tipo}')" class="px-2.5 py-1 ${opts.btnClass} text-xs font-semibold rounded-lg text-white transition active:scale-95">
+                    Pagar Cuota
+                  </button>
+                ` : `<span class="text-xs text-emerald-400 font-semibold px-2">${opts.doneLabel}</span>`}
+                <button onclick="abrirModalEditarDeuda('${item.id}', '${tipo}')" class="text-slate-400 hover:text-cyan-300 p-1.5 rounded-lg hover:bg-slate-800 transition" title="Editar deuda">
+                  <i class="fa-solid fa-pen-to-square"></i>
+                </button>
+                <button onclick="DataService.deleteDeuda('${item.id}', '${tipo}')" class="text-slate-500 hover:text-rose-400 p-1.5 rounded-lg hover:bg-slate-800 transition" title="Eliminar">
+                  <i class="fa-regular fa-trash-can"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    };
+
+    if (containerTarjetas) {
+      if (AppState.data.tarjetas.length === 0) {
+        containerTarjetas.innerHTML = `<p class="text-sm text-slate-400 py-4 text-center col-span-2">No hay compras en tarjeta de crédito activas.</p>`;
+      } else {
+        containerTarjetas.innerHTML = renderDeudaCards(AppState.data.tarjetas, 'tarjeta', {
+          defaultMetodo: 'Tarjeta de Crédito',
+          badgeClass: 'bg-blue-500/15 text-sky-300 border-sky-400/25',
+          cuotaLabel: 'pagadas',
+          amountClass: 'text-sky-300',
+          barClass: 'bg-blue-500',
+          btnClass: 'bg-blue-600 hover:bg-blue-500',
+          doneLabel: 'Completado'
+        });
+      }
+    }
+
+    if (containerMercadoCredito) {
+      const listaMC = AppState.data.mercadoCredito || [];
+      if (listaMC.length === 0) {
+        containerMercadoCredito.innerHTML = `<p class="text-sm text-slate-400 py-4 text-center col-span-2">No hay compras con Mercado Crédito activas.</p>`;
+      } else {
+        containerMercadoCredito.innerHTML = renderDeudaCards(listaMC, 'mercado_credito', {
+          defaultMetodo: 'Mercado Crédito',
+          badgeClass: 'bg-amber-500/15 text-amber-300 border-amber-400/30',
+          cuotaLabel: 'pagadas',
+          amountClass: 'text-amber-300',
+          barClass: 'bg-amber-400',
+          btnClass: 'bg-amber-600 hover:bg-amber-500',
+          doneLabel: 'Completado'
+        });
       }
     }
 
@@ -2008,44 +2135,15 @@ const UI = {
       if (AppState.data.prestamos.length === 0) {
         containerPrestamos.innerHTML = `<p class="text-sm text-slate-400 py-4 text-center col-span-2">No hay préstamos activos.</p>`;
       } else {
-        containerPrestamos.innerHTML = AppState.data.prestamos.map(p => {
-          const restCuotas = Math.max(0, (p.cuotas_totales || 1) - (p.cuotas_pagadas || 0));
-          const restMonto = restCuotas * (parseFloat(p.monto_cuota) || 0);
-          const pct = Math.min(100, Math.round(((p.cuotas_pagadas || 0) / (p.cuotas_totales || 1)) * 100));
-          return `
-            <div class="p-4 glass-subcard rounded-2xl space-y-3">
-              <div class="flex justify-between items-start">
-                <div>
-                  <h4 class="font-bold text-white text-sm">${p.prestamo}</h4>
-                  <span class="text-xs text-slate-400">${p.cuotas_pagadas || 0}/${p.cuotas_totales} cuotas abonadas (${pct}%)</span>
-                </div>
-                <div class="text-right">
-                  <span class="text-sm font-extrabold text-cyan-300 block">${UI.formatCurrency(p.monto_cuota)} / mes</span>
-                  <span class="text-[11px] text-slate-400">Resta: ${UI.formatCurrency(restMonto)}</span>
-                </div>
-              </div>
-              <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
-                <div class="bg-cyan-400 h-full rounded-full transition-all duration-500" style="width: ${pct}%"></div>
-              </div>
-              <div class="flex justify-between items-center pt-1">
-                <span class="text-xs text-slate-400">Total: ${UI.formatCurrency(p.monto_total)}</span>
-                <div class="flex items-center gap-1.5">
-                  ${(p.cuotas_pagadas || 0) < p.cuotas_totales ? `
-                    <button onclick="abrirModalPagarCuota('${p.id}', 'prestamo')" class="px-2.5 py-1 bg-cyan-600 hover:bg-cyan-500 text-xs font-semibold rounded-lg text-white transition active:scale-95">
-                      Pagar Cuota
-                    </button>
-                  ` : `<span class="text-xs text-emerald-400 font-semibold px-2">Cancelado</span>`}
-                  <button onclick="abrirModalEditarDeuda('${p.id}', 'prestamo')" class="text-slate-400 hover:text-cyan-300 p-1.5 rounded-lg hover:bg-slate-800 transition" title="Editar préstamo">
-                    <i class="fa-solid fa-pen-to-square"></i>
-                  </button>
-                  <button onclick="DataService.deleteDeuda('${p.id}', 'prestamo')" class="text-slate-500 hover:text-rose-400 p-1.5 rounded-lg hover:bg-slate-800 transition" title="Eliminar">
-                    <i class="fa-regular fa-trash-can"></i>
-                  </button>
-                </div>
-              </div>
-            </div>
-          `;
-        }).join('');
+        containerPrestamos.innerHTML = renderDeudaCards(AppState.data.prestamos, 'prestamo', {
+          defaultMetodo: 'Préstamo',
+          badgeClass: 'bg-cyan-500/15 text-cyan-300 border-cyan-400/25',
+          cuotaLabel: 'abonadas',
+          amountClass: 'text-cyan-300',
+          barClass: 'bg-cyan-400',
+          btnClass: 'bg-cyan-600 hover:bg-cyan-500',
+          doneLabel: 'Cancelado'
+        });
       }
     }
   },

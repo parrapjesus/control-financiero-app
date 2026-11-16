@@ -53,11 +53,14 @@ CREATE TABLE IF NOT EXISTS public.gastos_fijos (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 6. TABLA: Deudas (Tarjetas de Crédito y Préstamos)
+-- 6. TABLA: Deudas (Tarjetas de Crédito, Mercado Crédito y Préstamos)
+-- Si la tabla ya existe en Supabase, ejecuta:
+--   ALTER TABLE public.deudas DROP CONSTRAINT IF EXISTS deudas_tipo_check;
+--   ALTER TABLE public.deudas ADD CONSTRAINT deudas_tipo_check CHECK (tipo IN ('tarjeta', 'prestamo', 'mercado_credito'));
 CREATE TABLE IF NOT EXISTS public.deudas (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-    tipo TEXT NOT NULL CHECK (tipo IN ('tarjeta', 'prestamo')),
+    tipo TEXT NOT NULL CHECK (tipo IN ('tarjeta', 'prestamo', 'mercado_credito')),
     nombre TEXT NOT NULL,
     monto_total NUMERIC(12, 2) NOT NULL CHECK (monto_total >= 0),
     cuotas_totales INTEGER NOT NULL CHECK (cuotas_totales >= 1),

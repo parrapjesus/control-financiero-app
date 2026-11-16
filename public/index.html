@@ -339,7 +339,7 @@
             </div>
             <div>
               <h3 class="text-base font-bold text-white">Lo que falta pagar este mes</h3>
-              <p class="text-xs text-slate-400">Servicios pendientes y cuotas de tarjetas/préstamos sin abonar</p>
+              <p class="text-xs text-slate-400">Servicios pendientes y cuotas de tarjetas, Mercado Crédito y préstamos sin abonar</p>
             </div>
           </div>
           <div class="flex items-center gap-2.5">
@@ -451,14 +451,14 @@
       </div>
     </section>
 
-    <!-- 4. TARJETAS Y PRÉSTAMOS VIEW -->
+    <!-- 4. TARJETAS, MERCADO CRÉDITO Y PRÉSTAMOS VIEW -->
     <section id="tab-deudas" class="tab-content hidden space-y-6">
       <div class="flex items-center justify-between">
         <div>
-          <h2 class="text-lg font-bold text-white">Tarjetas &amp; Préstamos</h2>
-          <p class="text-xs text-slate-400">Seguimiento de compras en cuotas, préstamos y compromisos</p>
+          <h2 class="text-lg font-bold text-white">Tarjetas, Mercado Crédito &amp; Préstamos</h2>
+          <p class="text-xs text-slate-400">Seguimiento de compras en cuotas con tarjeta, Mercado Crédito y préstamos</p>
         </div>
-        <button onclick="document.getElementById('modal-add-deuda').classList.remove('hidden')" class="px-3.5 py-2 bg-blue-600/25 hover:bg-blue-600/40 text-sky-300 border border-sky-400/30 rounded-xl text-xs font-semibold flex items-center gap-2 transition">
+        <button onclick="abrirModalAgregarDeuda()" class="px-3.5 py-2 bg-blue-600/25 hover:bg-blue-600/40 text-sky-300 border border-sky-400/30 rounded-xl text-xs font-semibold flex items-center gap-2 transition">
           <i class="fa-solid fa-plus"></i> Registrar Deuda
         </button>
       </div>
@@ -478,7 +478,7 @@
         <div class="glass-panel p-4 rounded-2xl">
           <span class="text-xs text-slate-400 flex items-center gap-1.5"><i class="fa-solid fa-receipt"></i> Deudas Activas</span>
           <div id="metric-deudas-activas" class="text-xl sm:text-2xl font-black text-white mt-1">0</div>
-          <span class="text-[11px] text-slate-400">Tarjetas y préstamos en curso</span>
+          <span class="text-[11px] text-slate-400">Tarjetas, Mercado Crédito y préstamos en curso</span>
         </div>
       </div>
 
@@ -488,6 +488,16 @@
           <i class="fa-solid fa-credit-card text-sky-400"></i> Compras en Tarjeta de Crédito
         </h3>
         <div id="list-tarjetas" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <!-- Inyectado por JS -->
+        </div>
+      </div>
+
+      <!-- Mercado Crédito -->
+      <div class="glass-panel rounded-2xl p-4 md:p-6 space-y-4">
+        <h3 class="text-sm font-bold text-white flex items-center gap-2">
+          <i class="fa-solid fa-bolt text-amber-400"></i> Compras con Mercado Crédito
+        </h3>
+        <div id="list-mercado-credito" class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <!-- Inyectado por JS -->
         </div>
       </div>
@@ -786,21 +796,22 @@
     <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl">
       <div class="flex justify-between items-center">
         <h3 class="text-base font-bold text-white flex items-center gap-2">
-          <i class="fa-solid fa-credit-card text-indigo-400"></i> Registrar Tarjeta o Préstamo
+          <i class="fa-solid fa-credit-card text-indigo-400"></i> Registrar Deuda
         </h3>
         <button onclick="document.getElementById('modal-add-deuda').classList.add('hidden')" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
       </div>
       <form onsubmit="event.preventDefault(); submitDeuda();" class="space-y-3">
         <div>
-          <label class="text-xs text-slate-400 block mb-1">Tipo de Obligación</label>
-          <select id="in-deuda-tipo" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
+          <label class="text-xs text-slate-400 block mb-1">Tipo de Deuda</label>
+          <select id="in-deuda-tipo" onchange="onChangeDeudaTipo()" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
             <option value="tarjeta">Compra con Tarjeta de Crédito</option>
+            <option value="mercado_credito">Compra con Mercado Crédito</option>
             <option value="prestamo">Préstamo / Crédito Bancario</option>
           </select>
         </div>
         <div>
           <label class="text-xs text-slate-400 block mb-1">Descripción / Concepto</label>
-          <input type="text" id="in-deuda-nombre" required placeholder="Ej: Notebook, Préstamo Personal" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
+          <input type="text" id="in-deuda-nombre" required placeholder="Ej: Notebook, Zapatillas, Préstamo Personal" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
         </div>
         <div class="grid grid-cols-2 gap-3">
           <div>
@@ -841,7 +852,16 @@
       </div>
       <form onsubmit="event.preventDefault(); submitEditarDeuda();" class="space-y-3">
         <input type="hidden" id="in-edit-deuda-id">
-        <input type="hidden" id="in-edit-deuda-tipo">
+        <input type="hidden" id="in-edit-deuda-tipo-original">
+
+        <div>
+          <label class="text-xs text-slate-400 block mb-1">Tipo de Deuda</label>
+          <select id="in-edit-deuda-tipo" onchange="onChangeEditDeudaTipo()" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
+            <option value="tarjeta">Compra con Tarjeta de Crédito</option>
+            <option value="mercado_credito">Compra con Mercado Crédito</option>
+            <option value="prestamo">Préstamo / Crédito Bancario</option>
+          </select>
+        </div>
 
         <div>
           <label class="text-xs text-slate-400 block mb-1">Descripción / Concepto</label>
@@ -1149,9 +1169,54 @@
   <div id="toast-notification" class="fixed bottom-20 left-1/2 -translate-x-1/2 px-5 py-2.5 rounded-full text-xs font-semibold text-white shadow-xl opacity-0 pointer-events-none transition-all duration-300 z-50"></div>
 
   <!-- App Scripts -->
-  <script src="/js/supabase-config.js?v=12"></script>
-  <script src="/js/app.js?v=12"></script>
+  <script src="/js/supabase-config.js?v=13"></script>
+  <script src="/js/app.js?v=13"></script>
   <script>
+    function selectDeudaMetodoDefault(selMetodo, tipo) {
+      if (!selMetodo) return;
+      const options = Array.from(selMetodo.options).map(o => o.value);
+      if (tipo === 'mercado_credito') {
+        const matchMC = options.find(v => v.toLowerCase().includes('mercado cr'));
+        if (matchMC) {
+          selMetodo.value = matchMC;
+        } else {
+          const opt = document.createElement('option');
+          opt.value = 'Mercado Crédito';
+          opt.textContent = 'Mercado Crédito';
+          selMetodo.appendChild(opt);
+          selMetodo.value = 'Mercado Crédito';
+        }
+      } else if (tipo === 'tarjeta') {
+        const matchCard = options.find(v => v === 'Tarjeta de Crédito' || v === 'TDC' || v.toLowerCase().includes('tarjeta'));
+        if (matchCard) selMetodo.value = matchCard;
+      } else if (tipo === 'prestamo') {
+        if (selMetodo.value.toLowerCase().includes('mercado cr') || selMetodo.value === 'TDC') {
+          const matchBank = options.find(v => v === 'Santander' || v === 'General' || v === 'Transferencia');
+          if (matchBank) selMetodo.value = matchBank;
+        }
+      }
+    }
+
+    function abrirModalAgregarDeuda() {
+      UI.renderMetodosSelects();
+      onChangeDeudaTipo();
+      document.getElementById('modal-add-deuda').classList.remove('hidden');
+    }
+
+    function onChangeDeudaTipo() {
+      const tipo = document.getElementById('in-deuda-tipo')?.value || 'tarjeta';
+      const selMetodo = document.getElementById('in-deuda-metodo');
+      selectDeudaMetodoDefault(selMetodo, tipo);
+    }
+
+    function onChangeEditDeudaTipo() {
+      const tipo = document.getElementById('in-edit-deuda-tipo')?.value || 'tarjeta';
+      const selMetodo = document.getElementById('in-edit-deuda-metodo');
+      if (tipo === 'mercado_credito') {
+        selectDeudaMetodoDefault(selMetodo, tipo);
+      }
+    }
+
     function submitIngreso() {
       const desc = document.getElementById('in-ingreso-desc').value;
       const monto = document.getElementById('in-ingreso-monto').value;
@@ -1200,7 +1265,7 @@
 
     // --- ABONAR CUOTA DE DEUDA ---
     function abrirModalPagarCuota(id, tipo) {
-      const lista = tipo === 'tarjeta' ? AppState.data.tarjetas : AppState.data.prestamos;
+      const lista = DataService.getDeudaList(tipo);
       const item = lista.find(d => d.id === id);
       if (!item) return;
 
@@ -1223,7 +1288,9 @@
 
       const selMetodo = document.getElementById('in-pagar-cuota-metodo');
       if (selMetodo) {
-        if (item.metodo && AppState.data.metodos.includes(item.metodo)) {
+        if (tipo === 'mercado_credito' && AppState.data.metodos.includes('Mercado Pago')) {
+          selMetodo.value = 'Mercado Pago';
+        } else if (item.metodo && AppState.data.metodos.includes(item.metodo) && item.metodo !== 'TDC' && !item.metodo.toLowerCase().includes('mercado cr')) {
           selMetodo.value = item.metodo;
         } else if (AppState.data.metodos.includes('Santander')) {
           selMetodo.value = 'Santander';
@@ -1341,16 +1408,20 @@
       document.getElementById('modal-reconciliar').classList.add('hidden');
     }
 
-    // --- EDICIÓN DIRECTA DE DEUDAS (TARJETAS Y PRÉSTAMOS) ---
+    // --- EDICIÓN DIRECTA DE DEUDAS (TARJETAS, MERCADO CRÉDITO Y PRÉSTAMOS) ---
     function abrirModalEditarDeuda(id, tipo) {
-      const lista = tipo === 'tarjeta' ? AppState.data.tarjetas : AppState.data.prestamos;
+      const lista = DataService.getDeudaList(tipo);
       const item = lista.find(d => d.id === id);
       if (!item) return;
 
+      UI.renderMetodosSelects();
+
       document.getElementById('in-edit-deuda-id').value = id;
+      document.getElementById('in-edit-deuda-tipo-original').value = tipo;
       document.getElementById('in-edit-deuda-tipo').value = tipo;
+      const tipoLabel = DataService.getDeudaTipoLabel(tipo);
       document.getElementById('modal-edit-deuda-title').innerHTML = `
-        <i class="fa-solid fa-pen-to-square text-indigo-400"></i> Modificar ${tipo === 'tarjeta' ? 'Tarjeta' : 'Préstamo'}: ${item.compra || item.prestamo}
+        <i class="fa-solid fa-pen-to-square text-indigo-400"></i> Modificar ${tipoLabel}: ${item.compra || item.prestamo}
       `;
       document.getElementById('in-edit-deuda-nombre').value = item.compra || item.prestamo;
       document.getElementById('in-edit-deuda-total').value = item.monto_total;
@@ -1359,7 +1430,17 @@
       document.getElementById('in-edit-deuda-monto-cuota').value = item.monto_cuota;
 
       const selMetodo = document.getElementById('in-edit-deuda-metodo');
-      if (selMetodo) selMetodo.value = item.metodo || 'Tarjeta de Crédito';
+      if (selMetodo) {
+        const metodoVal = item.metodo || (tipo === 'mercado_credito' ? 'Mercado Crédito' : 'Tarjeta de Crédito');
+        const exists = Array.from(selMetodo.options).some(o => o.value === metodoVal);
+        if (!exists && metodoVal) {
+          const opt = document.createElement('option');
+          opt.value = metodoVal;
+          opt.textContent = metodoVal;
+          selMetodo.appendChild(opt);
+        }
+        selMetodo.value = metodoVal;
+      }
 
       actualizarPreviewEditDeuda(true);
       document.getElementById('modal-edit-deuda').classList.remove('hidden');
@@ -1387,6 +1468,7 @@
 
     function submitEditarDeuda() {
       const id = document.getElementById('in-edit-deuda-id').value;
+      const tipoOriginal = document.getElementById('in-edit-deuda-tipo-original').value;
       const tipo = document.getElementById('in-edit-deuda-tipo').value;
       const nombre = document.getElementById('in-edit-deuda-nombre').value.trim();
       const total = parseFloat(document.getElementById('in-edit-deuda-total').value) || 0;
@@ -1395,7 +1477,8 @@
       const montoCuota = parseFloat(document.getElementById('in-edit-deuda-monto-cuota').value) || (total / cuotasTot);
       const metodo = document.getElementById('in-edit-deuda-metodo').value;
 
-      DataService.updateDeuda(id, tipo, {
+      DataService.updateDeuda(id, tipoOriginal, {
+        tipo,
         nombre,
         monto_total: total,
         cuotas_totales: cuotasTot,
@@ -1472,13 +1555,13 @@
     }
 
     // Limpieza forzada de cachés antiguas en el navegador móvil
-    if ('caches' in window && localStorage.getItem('CFP_CACHE_PURGED_V12') !== 'true') {
+    if ('caches' in window && localStorage.getItem('CFP_CACHE_PURGED_V13') !== 'true') {
       caches.keys().then(keys => {
         return Promise.all(keys.map(k => {
-          if (k !== 'cfp-cache-v12') return caches.delete(k);
+          if (k !== 'cfp-cache-v13') return caches.delete(k);
         }));
       }).then(() => {
-        localStorage.setItem('CFP_CACHE_PURGED_V12', 'true');
+        localStorage.setItem('CFP_CACHE_PURGED_V13', 'true');
         console.log('🧹 Cachés obsoletas eliminadas del dispositivo');
       });
     }
@@ -1486,7 +1569,7 @@
     // Registro de Service Worker para PWA / TWA con auto-actualización forzada
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js?v=12')
+        navigator.serviceWorker.register('/sw.js?v=13')
           .then(reg => {
             console.log('✅ Service Worker PWA registrado:', reg.scope);
             reg.update();
