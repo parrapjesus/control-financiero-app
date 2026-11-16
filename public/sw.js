@@ -1,5 +1,5 @@
 // Service Worker para Control Financiero Pro (PWA / TWA) - Network-First
-const CACHE_NAME = 'cfp-cache-v11';
+const CACHE_NAME = 'cfp-cache-v12';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
@@ -39,7 +39,7 @@ self.addEventListener('fetch', (event) => {
   const url = event.request.url;
 
   // No interceptar llamadas a APIs ni bases de datos externas
-  if (url.includes('/api/') || url.includes('supabase.co') || url.includes('googleapis.com')) {
+  if (url.includes('/api/') || url.includes('supabase.co') || url.includes('googleapis.com') || url.includes('script.google.com') || url.includes('script.googleusercontent.com')) {
     return;
   }
 

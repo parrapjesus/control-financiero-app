@@ -9,11 +9,22 @@ const SupabaseConfig = {
   // Configuración predeterminada o guardada por el usuario
   getUrl: () => localStorage.getItem('CFP_SUPABASE_URL') || window.__ENV_SUPABASE_URL__ || 'https://kqoofxosufvhlsotxwdh.supabase.co',
   getKey: () => localStorage.getItem('CFP_SUPABASE_ANON_KEY') || window.__ENV_SUPABASE_ANON_KEY__ || 'sb_publishable_p0w_8FgEhUGP95ZosgAs0w_TK34GghL',
+  getSheetsSyncUrl: () => localStorage.getItem('CFP_SHEETS_SYNC_URL') || window.__ENV_SHEETS_SYNC_URL__ || '',
 
   saveCredentials: (url, anonKey) => {
     if (url) localStorage.setItem('CFP_SUPABASE_URL', url.trim());
     if (anonKey) localStorage.setItem('CFP_SUPABASE_ANON_KEY', anonKey.trim());
     SupabaseConfig.init();
+  },
+
+  saveSheetsSyncUrl: (url) => {
+    const clean = (url || '').trim();
+    if (clean) {
+      localStorage.setItem('CFP_SHEETS_SYNC_URL', clean);
+    } else {
+      localStorage.removeItem('CFP_SHEETS_SYNC_URL');
+    }
+    return clean;
   },
 
   client: null,

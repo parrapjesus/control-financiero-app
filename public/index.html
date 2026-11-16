@@ -578,8 +578,8 @@
       </div>
 
       <!-- Cloud Sync & Status Card -->
-      <div class="glass-panel rounded-2xl p-5 space-y-3">
-        <div class="flex items-center justify-between">
+      <div class="glass-panel rounded-2xl p-5 space-y-4">
+        <div class="flex items-center justify-between gap-3">
           <div class="flex items-center gap-3">
             <div class="w-10 h-10 rounded-2xl bg-cyan-500/10 text-cyan-400 flex items-center justify-center text-lg border border-cyan-400/20">
               <i class="fa-solid fa-cloud-arrow-up"></i>
@@ -589,14 +589,25 @@
               <p class="text-xs text-slate-400">Google Sheets ⇄ Supabase (PostgreSQL) • Hosting Vercel</p>
             </div>
           </div>
-          <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+          <span id="sheets-sync-badge" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
             <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> Conectado
           </span>
         </div>
-        <p class="text-xs bg-[#060E1F]/70 p-3 rounded-xl border border-sky-400/15 text-slate-300">
-          <i class="fa-solid fa-shield-halved text-sky-400 mr-1.5"></i>
-          Las credenciales de Supabase y el sincronizador de Google Sheets siguen activos en segundo plano para que el tablero se actualice automáticamente.
-        </p>
+
+        <div class="space-y-2 bg-[#060E1F]/70 p-3.5 rounded-xl border border-sky-400/15">
+          <label for="setting-sheets-sync-url" class="block text-xs font-semibold text-sky-300">
+            <i class="fa-solid fa-table text-emerald-400 mr-1.5"></i> URL de Web App de Google Sheets (Apps Script)
+          </label>
+          <p class="text-[11px] text-slate-400 leading-relaxed">
+            Pega aquí la URL <code class="text-cyan-300">https://script.google.com/macros/s/.../exec</code> de tu Apps Script para que el botón <strong class="text-white">Actualizar</strong> sincronice directo con tu Google Sheet.
+          </p>
+          <div class="flex flex-col sm:flex-row gap-2 pt-1">
+            <input type="url" id="setting-sheets-sync-url" placeholder="https://script.google.com/macros/s/.../exec" class="flex-1 bg-slate-950/90 border border-slate-700 focus:border-cyan-400 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 outline-none">
+            <button type="button" onclick="saveSheetsSettings()" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-semibold whitespace-nowrap transition active:scale-95">
+              Guardar y Sincronizar
+            </button>
+          </div>
+        </div>
 
         <!-- Hidden inputs para compatibilidad con scripts existentes -->
         <input type="hidden" id="setting-supabase-url">
@@ -1138,8 +1149,8 @@
   <div id="toast-notification" class="fixed bottom-20 left-1/2 -translate-x-1/2 px-5 py-2.5 rounded-full text-xs font-semibold text-white shadow-xl opacity-0 pointer-events-none transition-all duration-300 z-50"></div>
 
   <!-- App Scripts -->
-  <script src="/js/supabase-config.js?v=11"></script>
-  <script src="/js/app.js?v=11"></script>
+  <script src="/js/supabase-config.js?v=12"></script>
+  <script src="/js/app.js?v=12"></script>
   <script>
     function submitIngreso() {
       const desc = document.getElementById('in-ingreso-desc').value;
@@ -1452,14 +1463,22 @@
       UI.showNotification('Credenciales de Supabase guardadas', 'success');
     }
 
+    function saveSheetsSettings() {
+      const input = document.getElementById('setting-sheets-sync-url');
+      const url = input ? input.value : '';
+      SupabaseConfig.saveSheetsSyncUrl(url);
+      UI.updateSheetsSyncBadge();
+      DataService.refreshAll(document.getElementById('btn-refresh-data'));
+    }
+
     // Limpieza forzada de cachés antiguas en el navegador móvil
-    if ('caches' in window && localStorage.getItem('CFP_CACHE_PURGED_V11') !== 'true') {
+    if ('caches' in window && localStorage.getItem('CFP_CACHE_PURGED_V12') !== 'true') {
       caches.keys().then(keys => {
         return Promise.all(keys.map(k => {
-          if (k !== 'cfp-cache-v11') return caches.delete(k);
+          if (k !== 'cfp-cache-v12') return caches.delete(k);
         }));
       }).then(() => {
-        localStorage.setItem('CFP_CACHE_PURGED_V11', 'true');
+        localStorage.setItem('CFP_CACHE_PURGED_V12', 'true');
         console.log('🧹 Cachés obsoletas eliminadas del dispositivo');
       });
     }
@@ -1467,7 +1486,7 @@
     // Registro de Service Worker para PWA / TWA con auto-actualización forzada
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js?v=11')
+        navigator.serviceWorker.register('/sw.js?v=12')
           .then(reg => {
             console.log('✅ Service Worker PWA registrado:', reg.scope);
             reg.update();

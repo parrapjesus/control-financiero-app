@@ -139,11 +139,59 @@ const DataService = {
     UI.renderAll();
   },
 
+  async syncGoogleSheets() {
+    const syncUrl = typeof SupabaseConfig.getSheetsSyncUrl === 'function' ? SupabaseConfig.getSheetsSyncUrl() : '';
+    if (!syncUrl) return { configured: false, ok: false };
+
+    const sep = syncUrl.includes('?') ? '&' : '?';
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timeoutId = controller ? setTimeout(() => controller.abort(), 18000) : null;
+
+    try {
+      const resp = await fetch(`${syncUrl}${sep}action=sync&_t=${Date.now()}`, {
+        method: 'GET',
+        redirect: 'follow',
+        signal: controller ? controller.signal : undefined
+      });
+      if (!resp.ok) {
+        return { configured: true, ok: false, error: `HTTP ${resp.status}` };
+      }
+      const rawText = await resp.text();
+      let payload = {};
+      try {
+        payload = JSON.parse(rawText);
+      } catch (parseErr) {
+        return { configured: true, ok: false, error: 'Respuesta inválida del Web App de Sheets' };
+      }
+      if (payload && payload.ok === false) {
+        return { configured: true, ok: false, error: payload.error || 'Error en Apps Script' };
+      }
+      const subidosTotal = (Number(payload.subidosGastos) || 0) + (Number(payload.subidosIngresos) || 0) + (Number(payload.subidosInversiones) || 0);
+      return { configured: true, ok: true, subidosTotal, payload };
+    } catch (err) {
+      return { configured: true, ok: false, error: err.name === 'AbortError' ? 'Tiempo de espera agotado' : err.message };
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+    }
+  },
+
   async refreshAll(btn) {
     const icon = btn ? btn.querySelector('i') : null;
     if (icon) icon.classList.add('fa-spin');
     try {
-      await DataService.loadAllData(false);
+      const sheetsRes = await DataService.syncGoogleSheets();
+      if (sheetsRes.configured && sheetsRes.ok) {
+        await DataService.loadAllData(true);
+        const msg = sheetsRes.subidosTotal > 0
+          ? `Google Sheets sincronizado (+${sheetsRes.subidosTotal} nuevos) y tablero actualizado`
+          : 'Google Sheets y Supabase actualizados';
+        UI.showNotification(msg, 'success');
+      } else if (sheetsRes.configured && !sheetsRes.ok) {
+        await DataService.loadAllData(true);
+        UI.showNotification(`Supabase actualizado (Sheets: ${sheetsRes.error})`, 'warning');
+      } else {
+        await DataService.loadAllData(false);
+      }
     } finally {
       if (icon) setTimeout(() => icon.classList.remove('fa-spin'), 400);
     }
@@ -1268,6 +1316,19 @@ const UI = {
     el.textContent = `Actualizado ${hh}:${mm}`;
   },
 
+  updateSheetsSyncBadge() {
+    const badge = document.getElementById('sheets-sync-badge');
+    if (!badge) return;
+    const syncUrl = typeof SupabaseConfig.getSheetsSyncUrl === 'function' ? SupabaseConfig.getSheetsSyncUrl() : '';
+    if (syncUrl) {
+      badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
+      badge.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> Sheets + Supabase';
+    } else {
+      badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-500/10 text-amber-300 border border-amber-500/20';
+      badge.innerHTML = '<span class="w-2 h-2 rounded-full bg-amber-400"></span> Falta URL de Sheets';
+    }
+  },
+
   updateMonthLabel() {
     const el = document.getElementById('header-current-month');
     if (!el) return;
@@ -2118,7 +2179,12 @@ window.addEventListener('DOMContentLoaded', () => {
   // Cargar Ajustes guardados
   const inputSupabaseUrl = document.getElementById('setting-supabase-url');
   const inputSupabaseKey = document.getElementById('setting-supabase-key');
+  const inputSheetsUrl = document.getElementById('setting-sheets-sync-url');
 
   if (inputSupabaseUrl) inputSupabaseUrl.value = SupabaseConfig.getUrl();
   if (inputSupabaseKey) inputSupabaseKey.value = SupabaseConfig.getKey();
+  if (inputSheetsUrl && typeof SupabaseConfig.getSheetsSyncUrl === 'function') {
+    inputSheetsUrl.value = SupabaseConfig.getSheetsSyncUrl();
+  }
+  UI.updateSheetsSyncBadge();
 });
