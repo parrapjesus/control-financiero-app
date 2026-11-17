@@ -1169,8 +1169,8 @@
   <div id="toast-notification" class="fixed bottom-20 left-1/2 -translate-x-1/2 px-5 py-2.5 rounded-full text-xs font-semibold text-white shadow-xl opacity-0 pointer-events-none transition-all duration-300 z-50"></div>
 
   <!-- App Scripts -->
-  <script src="/js/supabase-config.js?v=13"></script>
-  <script src="/js/app.js?v=13"></script>
+  <script src="/js/supabase-config.js?v=14"></script>
+  <script src="/js/app.js?v=14"></script>
   <script>
     function selectDeudaMetodoDefault(selMetodo, tipo) {
       if (!selMetodo) return;
@@ -1555,13 +1555,13 @@
     }
 
     // Limpieza forzada de cachés antiguas en el navegador móvil
-    if ('caches' in window && localStorage.getItem('CFP_CACHE_PURGED_V13') !== 'true') {
+    if ('caches' in window && localStorage.getItem('CFP_CACHE_PURGED_V14') !== 'true') {
       caches.keys().then(keys => {
         return Promise.all(keys.map(k => {
-          if (k !== 'cfp-cache-v13') return caches.delete(k);
+          if (k !== 'cfp-cache-v14') return caches.delete(k);
         }));
       }).then(() => {
-        localStorage.setItem('CFP_CACHE_PURGED_V13', 'true');
+        localStorage.setItem('CFP_CACHE_PURGED_V14', 'true');
         console.log('🧹 Cachés obsoletas eliminadas del dispositivo');
       });
     }
@@ -1569,7 +1569,7 @@
     // Registro de Service Worker para PWA / TWA con auto-actualización forzada
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js?v=13')
+        navigator.serviceWorker.register('/sw.js?v=14')
           .then(reg => {
             console.log('✅ Service Worker PWA registrado:', reg.scope);
             reg.update();

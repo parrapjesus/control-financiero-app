@@ -165,8 +165,11 @@ const DataService = {
       if (payload && payload.ok === false) {
         return { configured: true, ok: false, error: payload.error || 'Error en Apps Script' };
       }
-      const subidosTotal = (Number(payload.subidosGastos) || 0) + (Number(payload.subidosIngresos) || 0) + (Number(payload.subidosInversiones) || 0);
-      return { configured: true, ok: true, subidosTotal, payload };
+      const subidosTotal = payload.subidosTotal !== undefined
+        ? (Number(payload.subidosTotal) || 0)
+        : (Number(payload.subidosGastos) || 0) + (Number(payload.subidosIngresos) || 0) + (Number(payload.subidosFijos) || 0) + (Number(payload.subidosDeudas) || 0) + (Number(payload.subidosInversiones) || 0);
+      const actualizadosTotal = Number(payload.actualizadosTotal) || 0;
+      return { configured: true, ok: true, subidosTotal, actualizadosTotal, payload };
     } catch (err) {
       return { configured: true, ok: false, error: err.name === 'AbortError' ? 'Tiempo de espera agotado' : err.message };
     } finally {
@@ -181,8 +184,11 @@ const DataService = {
       const sheetsRes = await DataService.syncGoogleSheets();
       if (sheetsRes.configured && sheetsRes.ok) {
         await DataService.loadAllData(true);
-        const msg = sheetsRes.subidosTotal > 0
-          ? `Google Sheets sincronizado (+${sheetsRes.subidosTotal} nuevos) y tablero actualizado`
+        const partes = [];
+        if (sheetsRes.subidosTotal > 0) partes.push(`+${sheetsRes.subidosTotal} nuevos`);
+        if (sheetsRes.actualizadosTotal > 0) partes.push(`${sheetsRes.actualizadosTotal} editados`);
+        const msg = partes.length > 0
+          ? `Google Sheets sincronizado (${partes.join(', ')}) y tablero actualizado`
           : 'Google Sheets y Supabase actualizados';
         UI.showNotification(msg, 'success');
       } else if (sheetsRes.configured && !sheetsRes.ok) {
