@@ -1,19 +1,59 @@
 // ==============================================================================
-// CONFIGURACIÓN DEL CLIENTE SUPABASE
+// CONFIGURACIÓN DEL CLIENTE SUPABASE + GOOGLE SHEETS DIRECTO
 // ==============================================================================
-// Permite inicializar Supabase usando credenciales guardadas en LocalStorage
-// o variables inyectadas durante el despliegue.
+// Permite inicializar Supabase y lectura directa de Google Sheets usando
+// valores predeterminados seguros con respaldo en LocalStorage.
 // ==============================================================================
+
+const DEFAULT_SUPABASE_URL = 'https://kqoofxosufvhlsotxwdh.supabase.co';
+const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_p0w_8FgEhUGP95ZosgAs0w_TK34GghL';
+const DEFAULT_GOOGLE_SHEET_ID = '1OBFnppMCrYsx778162neKEu93B_vsAz1TrMMMsBwKDo';
 
 const SupabaseConfig = {
-  // Configuración predeterminada o guardada por el usuario
-  getUrl: () => localStorage.getItem('CFP_SUPABASE_URL') || window.__ENV_SUPABASE_URL__ || 'https://kqoofxosufvhlsotxwdh.supabase.co',
-  getKey: () => localStorage.getItem('CFP_SUPABASE_ANON_KEY') || window.__ENV_SUPABASE_ANON_KEY__ || 'sb_publishable_p0w_8FgEhUGP95ZosgAs0w_TK34GghL',
-  getSheetsSyncUrl: () => localStorage.getItem('CFP_SHEETS_SYNC_URL') || window.__ENV_SHEETS_SYNC_URL__ || '',
+  getUrl: () => {
+    const saved = (localStorage.getItem('CFP_SUPABASE_URL') || window.__ENV_SUPABASE_URL__ || '').trim();
+    if (saved && /^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/i.test(saved)) {
+      return saved.replace(/\/+$/, '');
+    }
+    return DEFAULT_SUPABASE_URL;
+  },
+
+  getKey: () => {
+    const saved = (localStorage.getItem('CFP_SUPABASE_ANON_KEY') || window.__ENV_SUPABASE_ANON_KEY__ || '').trim();
+    if (saved && saved.length >= 20) {
+      return saved;
+    }
+    return DEFAULT_SUPABASE_ANON_KEY;
+  },
+
+  getSheetsSyncUrl: () => (localStorage.getItem('CFP_SHEETS_SYNC_URL') || window.__ENV_SHEETS_SYNC_URL__ || '').trim(),
+
+  // Devuelve URL de Apps Script SOLO si es un endpoint Web App válido (/macros/s/.../exec)
+  getAppsScriptWebAppUrl: () => {
+    const raw = SupabaseConfig.getSheetsSyncUrl();
+    if (/^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec(\?.*)?$/i.test(raw)) {
+      return raw;
+    }
+    return '';
+  },
+
+  // Obtiene el ID del Google Sheet (extraído si el usuario pegó el link del Sheet, o el predeterminado)
+  getGoogleSheetId: () => {
+    const raw = SupabaseConfig.getSheetsSyncUrl();
+    const match = raw.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]{20,})/);
+    if (match && match[1]) return match[1];
+    const savedId = (localStorage.getItem('CFP_GOOGLE_SHEET_ID') || '').trim();
+    return savedId || DEFAULT_GOOGLE_SHEET_ID;
+  },
 
   saveCredentials: (url, anonKey) => {
-    if (url) localStorage.setItem('CFP_SUPABASE_URL', url.trim());
-    if (anonKey) localStorage.setItem('CFP_SUPABASE_ANON_KEY', anonKey.trim());
+    const cleanUrl = (url || '').trim().replace(/\/+$/, '');
+    const cleanKey = (anonKey || '').trim();
+    if (cleanUrl) localStorage.setItem('CFP_SUPABASE_URL', cleanUrl);
+    else localStorage.removeItem('CFP_SUPABASE_URL');
+    if (cleanKey) localStorage.setItem('CFP_SUPABASE_ANON_KEY', cleanKey);
+    else localStorage.removeItem('CFP_SUPABASE_ANON_KEY');
+    SupabaseConfig.client = null;
     SupabaseConfig.init();
   },
 

@@ -1,5 +1,5 @@
 // Service Worker para Control Financiero Pro (PWA / TWA) - Network-First
-const CACHE_NAME = 'cfp-cache-v14';
+const CACHE_NAME = 'cfp-cache-v15';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',

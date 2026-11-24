@@ -715,7 +715,7 @@
         </div>
         <div>
           <label class="text-xs text-slate-400 block mb-1">Monto ($)</label>
-          <input type="number" step="any" id="in-ingreso-monto" required placeholder="0.00" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
+          <input type="text" inputmode="decimal" id="in-ingreso-monto" required placeholder="Ej: 330000" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
         </div>
         <div>
           <label class="text-xs text-slate-400 block mb-1">Método / Cuenta</label>
@@ -745,7 +745,7 @@
         </div>
         <div>
           <label class="text-xs text-slate-400 block mb-1">Monto ($)</label>
-          <input type="number" step="any" id="in-gasto-monto" required placeholder="0.00" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
+          <input type="text" inputmode="decimal" id="in-gasto-monto" required placeholder="Ej: 12200" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
         </div>
         <div>
           <label class="text-xs text-slate-400 block mb-1">Método de Pago</label>
@@ -776,7 +776,7 @@
         <div class="grid grid-cols-2 gap-3">
           <div>
             <label class="text-xs text-slate-400 block mb-1">Monto ($)</label>
-            <input type="number" step="any" id="in-servicio-monto" required placeholder="0.00" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
+            <input type="text" inputmode="decimal" id="in-servicio-monto" required placeholder="Ej: 25000" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
           </div>
           <div>
             <label class="text-xs text-slate-400 block mb-1">Día de Vencimiento</label>
@@ -816,7 +816,7 @@
         <div class="grid grid-cols-2 gap-3">
           <div>
             <label class="text-xs text-slate-400 block mb-1">Monto Total ($)</label>
-            <input type="number" step="any" id="in-deuda-total" required placeholder="0.00" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
+            <input type="text" inputmode="decimal" id="in-deuda-total" required placeholder="Ej: 120000" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
           </div>
           <div>
             <label class="text-xs text-slate-400 block mb-1">Cantidad de Cuotas</label>
@@ -871,11 +871,11 @@
         <div class="grid grid-cols-2 gap-3">
           <div>
             <label class="text-xs text-slate-400 block mb-1">Monto Total ($)</label>
-            <input type="number" step="any" id="in-edit-deuda-total" oninput="actualizarPreviewEditDeuda()" required placeholder="0.00" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
+            <input type="text" inputmode="decimal" id="in-edit-deuda-total" oninput="actualizarPreviewEditDeuda()" required placeholder="0" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
           </div>
           <div>
             <label class="text-xs text-slate-400 block mb-1">Monto por Cuota ($)</label>
-            <input type="number" step="any" id="in-edit-deuda-monto-cuota" oninput="actualizarPreviewEditDeuda(true)" required placeholder="0.00" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
+            <input type="text" inputmode="decimal" id="in-edit-deuda-monto-cuota" oninput="actualizarPreviewEditDeuda(true)" required placeholder="0" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
           </div>
         </div>
 
@@ -941,7 +941,7 @@
 
         <div>
           <label class="text-xs text-slate-400 block mb-1">Monto a Abonar ($)</label>
-          <input type="number" step="any" id="in-pagar-cuota-monto" required placeholder="0.00" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:border-indigo-500 transition">
+          <input type="text" inputmode="decimal" id="in-pagar-cuota-monto" required placeholder="0" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:border-indigo-500 transition">
           <span class="text-[11px] text-slate-500 mt-1 block">Puedes ajustar el monto si la cuota real varió por intereses o cargos.</span>
         </div>
 
@@ -993,7 +993,7 @@
         </div>
         <div>
           <label class="text-xs text-slate-400 block mb-1">Monto a Mover ($)</label>
-          <input type="number" step="any" id="in-traspaso-monto" required min="1" placeholder="Ej: 50000" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:border-blue-500 transition font-semibold">
+          <input type="text" inputmode="decimal" id="in-traspaso-monto" required placeholder="Ej: 50000" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:border-blue-500 transition font-semibold">
         </div>
         <div>
           <label class="text-xs text-slate-400 block mb-1">Nota o Motivo (opcional)</label>
@@ -1029,7 +1029,7 @@
         <div class="grid grid-cols-2 gap-3">
           <div>
             <label class="text-xs text-slate-400 block mb-1">Monto ($)</label>
-            <input type="number" step="any" id="in-edit-servicio-monto" required placeholder="0.00" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
+            <input type="text" inputmode="decimal" id="in-edit-servicio-monto" required placeholder="0" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
           </div>
           <div>
             <label class="text-xs text-slate-400 block mb-1">Día Vencimiento (1-31)</label>
@@ -1066,7 +1066,7 @@
           </label>
           <div class="relative">
             <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold">$</span>
-            <input type="number" step="any" id="in-reconciliar-saldo" oninput="actualizarDiferenciaReconciliar()" required placeholder="0.00" class="w-full bg-slate-950 border border-slate-700 focus:border-emerald-500 rounded-xl pl-8 pr-3 py-2.5 text-base font-bold text-white transition">
+            <input type="text" inputmode="decimal" id="in-reconciliar-saldo" oninput="actualizarDiferenciaReconciliar()" required placeholder="0" class="w-full bg-slate-950 border border-slate-700 focus:border-emerald-500 rounded-xl pl-8 pr-3 py-2.5 text-base font-bold text-white transition">
           </div>
         </div>
 
@@ -1137,11 +1137,11 @@
         <div class="grid grid-cols-2 gap-3">
           <div>
             <label class="text-xs text-slate-400 block mb-1">Capital Invertido ($)</label>
-            <input type="number" step="any" id="in-inv-invertido" required placeholder="0.00" class="w-full bg-[#060E1F] border border-sky-400/20 rounded-xl px-3 py-2 text-sm text-white">
+            <input type="text" inputmode="decimal" id="in-inv-invertido" required placeholder="0" class="w-full bg-[#060E1F] border border-sky-400/20 rounded-xl px-3 py-2 text-sm text-white">
           </div>
           <div>
             <label class="text-xs text-slate-400 block mb-1">Valor Actual ($)</label>
-            <input type="number" step="any" id="in-inv-actual" placeholder="Igual al invertido" class="w-full bg-[#060E1F] border border-sky-400/20 rounded-xl px-3 py-2 text-sm text-white">
+            <input type="text" inputmode="decimal" id="in-inv-actual" placeholder="Igual al invertido" class="w-full bg-[#060E1F] border border-sky-400/20 rounded-xl px-3 py-2 text-sm text-white">
           </div>
         </div>
         <div class="grid grid-cols-2 gap-3">
@@ -1169,8 +1169,8 @@
   <div id="toast-notification" class="fixed bottom-20 left-1/2 -translate-x-1/2 px-5 py-2.5 rounded-full text-xs font-semibold text-white shadow-xl opacity-0 pointer-events-none transition-all duration-300 z-50"></div>
 
   <!-- App Scripts -->
-  <script src="/js/supabase-config.js?v=14"></script>
-  <script src="/js/app.js?v=14"></script>
+  <script src="/js/supabase-config.js?v=15"></script>
+  <script src="/js/app.js?v=15"></script>
   <script>
     function selectDeudaMetodoDefault(selMetodo, tipo) {
       if (!selMetodo) return;
@@ -1217,50 +1217,58 @@
       }
     }
 
-    function submitIngreso() {
+    async function submitIngreso() {
       const desc = document.getElementById('in-ingreso-desc').value;
       const monto = document.getElementById('in-ingreso-monto').value;
       const metodo = document.getElementById('in-ingreso-metodo').value;
-      DataService.addIngreso(desc, monto, metodo);
-      document.getElementById('modal-add-ingreso').classList.add('hidden');
-      document.getElementById('in-ingreso-desc').value = '';
-      document.getElementById('in-ingreso-monto').value = '';
+      const ok = await DataService.addIngreso(desc, monto, metodo);
+      if (ok) {
+        document.getElementById('modal-add-ingreso').classList.add('hidden');
+        document.getElementById('in-ingreso-desc').value = '';
+        document.getElementById('in-ingreso-monto').value = '';
+      }
     }
 
-    function submitGastoDiario() {
+    async function submitGastoDiario() {
       const desc = document.getElementById('in-gasto-desc').value;
       const monto = document.getElementById('in-gasto-monto').value;
       const metodo = document.getElementById('in-gasto-metodo').value;
-      DataService.addGastoDiario(desc, monto, metodo);
-      document.getElementById('modal-add-gasto').classList.add('hidden');
-      document.getElementById('in-gasto-desc').value = '';
-      document.getElementById('in-gasto-monto').value = '';
+      const ok = await DataService.addGastoDiario(desc, monto, metodo);
+      if (ok) {
+        document.getElementById('modal-add-gasto').classList.add('hidden');
+        document.getElementById('in-gasto-desc').value = '';
+        document.getElementById('in-gasto-monto').value = '';
+      }
     }
 
-    function submitServicio() {
+    async function submitServicio() {
       const nombre = document.getElementById('in-servicio-nombre').value;
       const monto = document.getElementById('in-servicio-monto').value;
       const venc = document.getElementById('in-servicio-venc').value;
-      DataService.addServicio(nombre, monto, venc);
-      document.getElementById('modal-add-servicio').classList.add('hidden');
-      document.getElementById('in-servicio-nombre').value = '';
-      document.getElementById('in-servicio-monto').value = '';
-      document.getElementById('in-servicio-venc').value = '';
+      const ok = await DataService.addServicio(nombre, monto, venc);
+      if (ok) {
+        document.getElementById('modal-add-servicio').classList.add('hidden');
+        document.getElementById('in-servicio-nombre').value = '';
+        document.getElementById('in-servicio-monto').value = '';
+        document.getElementById('in-servicio-venc').value = '';
+      }
     }
 
-    function submitDeuda() {
+    async function submitDeuda() {
       const tipo = document.getElementById('in-deuda-tipo').value;
       const nombre = document.getElementById('in-deuda-nombre').value;
       const total = document.getElementById('in-deuda-total').value;
       const cuotas = document.getElementById('in-deuda-cuotas').value;
       const pagadas = document.getElementById('in-deuda-cuotas-pagadas') ? document.getElementById('in-deuda-cuotas-pagadas').value : 0;
       const metodo = document.getElementById('in-deuda-metodo').value;
-      DataService.addDeuda(tipo, nombre, total, cuotas, metodo, pagadas);
-      document.getElementById('modal-add-deuda').classList.add('hidden');
-      document.getElementById('in-deuda-nombre').value = '';
-      document.getElementById('in-deuda-total').value = '';
-      document.getElementById('in-deuda-cuotas').value = '';
-      if (document.getElementById('in-deuda-cuotas-pagadas')) document.getElementById('in-deuda-cuotas-pagadas').value = '0';
+      const ok = await DataService.addDeuda(tipo, nombre, total, cuotas, metodo, pagadas);
+      if (ok) {
+        document.getElementById('modal-add-deuda').classList.add('hidden');
+        document.getElementById('in-deuda-nombre').value = '';
+        document.getElementById('in-deuda-total').value = '';
+        document.getElementById('in-deuda-cuotas').value = '';
+        if (document.getElementById('in-deuda-cuotas-pagadas')) document.getElementById('in-deuda-cuotas-pagadas').value = '0';
+      }
     }
 
     // --- ABONAR CUOTA DE DEUDA ---
@@ -1288,8 +1296,8 @@
 
       const selMetodo = document.getElementById('in-pagar-cuota-metodo');
       if (selMetodo) {
-        if (tipo === 'mercado_credito' && AppState.data.metodos.includes('Mercado Pago')) {
-          selMetodo.value = 'Mercado Pago';
+        if (AppState.data.metodos.includes('Santander') && (tipo === 'mercado_credito' || !item.metodo || item.metodo === 'TDC' || item.metodo.toLowerCase().includes('mercado cr'))) {
+          selMetodo.value = 'Santander';
         } else if (item.metodo && AppState.data.metodos.includes(item.metodo) && item.metodo !== 'TDC' && !item.metodo.toLowerCase().includes('mercado cr')) {
           selMetodo.value = item.metodo;
         } else if (AppState.data.metodos.includes('Santander')) {
@@ -1343,6 +1351,7 @@
 
     // --- AJUSTE DIRECTO DE CAPITAL / RECONCILIACIÓN ---
     function abrirModalAjustarSaldo() {
+      UI.renderMetodosSelects();
       const current = Calculations.getMetrics().saldoReal;
       const saldoActualEl = document.getElementById('reconciliar-saldo-actual');
       if (saldoActualEl) saldoActualEl.textContent = UI.formatCurrency(current);
@@ -1370,14 +1379,15 @@
 
       if (!inSaldo || !difBox || !difTexto) return;
 
-      const typedVal = parseFloat(inSaldo.value);
-      if (isNaN(typedVal)) {
+      const rawStr = String(inSaldo.value || '').trim();
+      if (!rawStr) {
         difBox.className = 'p-3 rounded-xl border border-slate-700 bg-slate-800/40 text-xs text-slate-400';
         difTexto.textContent = 'Ingresa el monto que tienes disponible hoy.';
         if (btnSubmit) btnSubmit.textContent = 'Actualizar Capital';
         return;
       }
 
+      const typedVal = DataService.parseMonto(rawStr);
       const dif = typedVal - current;
 
       if (Math.abs(dif) < 1) {
@@ -1385,10 +1395,10 @@
         difTexto.innerHTML = `<i class="fa-solid fa-circle-check mr-1 text-emerald-400"></i> Tu dinero en mano coincide con el sistema ($${Math.round(typedVal).toLocaleString('es-AR')}). No requiere ajuste.`;
       } else if (dif < 0) {
         difBox.className = 'p-3 rounded-xl border border-rose-500/30 bg-rose-500/10 text-xs text-rose-300';
-        difTexto.innerHTML = `<i class="fa-solid fa-arrow-trend-down mr-1 text-rose-400 font-bold"></i> <strong>Menos plata en mano:</strong> Tienes <strong>${UI.formatCurrency(Math.abs(dif))}</strong> menos de lo registrado. Se creará automáticamente un gasto de ajuste para cuadrar tu capital.`;
+        difTexto.innerHTML = `<i class="fa-solid fa-arrow-trend-down mr-1 text-rose-400 font-bold"></i> <strong>Menos plata en mano:</strong> Tienes <strong>${UI.formatCurrency(Math.abs(dif))}</strong> menos de lo registrado. Se ajustará tu cuenta automáticamente.`;
       } else {
         difBox.className = 'p-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-xs text-emerald-300';
-        difTexto.innerHTML = `<i class="fa-solid fa-arrow-trend-up mr-1 text-emerald-400 font-bold"></i> <strong>Más plata en mano:</strong> Tienes <strong>${UI.formatCurrency(dif)}</strong> extra no registrados. Se creará automáticamente un ingreso de ajuste para cuadrar tu capital.`;
+        difTexto.innerHTML = `<i class="fa-solid fa-arrow-trend-up mr-1 text-emerald-400 font-bold"></i> <strong>Más plata en mano:</strong> Tienes <strong>${UI.formatCurrency(dif)}</strong> extra no registrados. Se ajustará tu cuenta automáticamente.`;
       }
 
       if (btnSubmit) {
@@ -1396,16 +1406,18 @@
       }
     }
 
-    function submitReconciliar() {
+    async function submitReconciliar() {
       const inSaldo = document.getElementById('in-reconciliar-saldo');
-      if (!inSaldo || isNaN(parseFloat(inSaldo.value))) return;
-      const saldo = parseFloat(inSaldo.value);
+      if (!inSaldo || !String(inSaldo.value || '').trim()) return;
+      const saldo = DataService.parseMonto(inSaldo.value);
       const marcarServ = document.getElementById('in-reconciliar-servicios').checked;
-      const metodo = document.getElementById('in-reconciliar-metodo').value || 'General';
+      const metodo = document.getElementById('in-reconciliar-metodo').value || 'Santander';
       const motivo = document.getElementById('in-reconciliar-motivo').value.trim() || 'Ajuste de Capital (Reconciliación)';
 
-      DataService.reconciliarSaldo(saldo, marcarServ, [], metodo, motivo);
-      document.getElementById('modal-reconciliar').classList.add('hidden');
+      const ok = await DataService.reconciliarSaldo(saldo, marcarServ, [], metodo, motivo);
+      if (ok) {
+        document.getElementById('modal-reconciliar').classList.add('hidden');
+      }
     }
 
     // --- EDICIÓN DIRECTA DE DEUDAS (TARJETAS, MERCADO CRÉDITO Y PRÉSTAMOS) ---
@@ -1447,7 +1459,7 @@
     }
 
     function actualizarPreviewEditDeuda(manualCuota = false) {
-      const total = parseFloat(document.getElementById('in-edit-deuda-total').value) || 0;
+      const total = DataService.parseMonto(document.getElementById('in-edit-deuda-total').value);
       const cuotasTot = parseInt(document.getElementById('in-edit-deuda-cuotas-totales').value, 10) || 1;
       const cuotasPag = parseInt(document.getElementById('in-edit-deuda-cuotas-pagadas').value, 10) || 0;
       const inputCuota = document.getElementById('in-edit-deuda-monto-cuota');
@@ -1456,7 +1468,7 @@
         inputCuota.value = Math.round(total / cuotasTot);
       }
 
-      const montoCuota = parseFloat(inputCuota?.value) || (cuotasTot > 0 ? total / cuotasTot : 0);
+      const montoCuota = DataService.parseMonto(inputCuota?.value) || (cuotasTot > 0 ? total / cuotasTot : 0);
       const cuotasRest = Math.max(0, cuotasTot - cuotasPag);
       const restante = cuotasRest * montoCuota;
 
@@ -1466,18 +1478,18 @@
       if (previewSaldo) previewSaldo.textContent = UI.formatCurrency(restante);
     }
 
-    function submitEditarDeuda() {
+    async function submitEditarDeuda() {
       const id = document.getElementById('in-edit-deuda-id').value;
       const tipoOriginal = document.getElementById('in-edit-deuda-tipo-original').value;
       const tipo = document.getElementById('in-edit-deuda-tipo').value;
       const nombre = document.getElementById('in-edit-deuda-nombre').value.trim();
-      const total = parseFloat(document.getElementById('in-edit-deuda-total').value) || 0;
+      const total = DataService.parseMonto(document.getElementById('in-edit-deuda-total').value);
       const cuotasTot = parseInt(document.getElementById('in-edit-deuda-cuotas-totales').value, 10) || 1;
       const cuotasPag = parseInt(document.getElementById('in-edit-deuda-cuotas-pagadas').value, 10) || 0;
-      const montoCuota = parseFloat(document.getElementById('in-edit-deuda-monto-cuota').value) || (total / cuotasTot);
+      const montoCuota = DataService.parseMonto(document.getElementById('in-edit-deuda-monto-cuota').value) || (total / cuotasTot);
       const metodo = document.getElementById('in-edit-deuda-metodo').value;
 
-      DataService.updateDeuda(id, tipoOriginal, {
+      const ok = await DataService.updateDeuda(id, tipoOriginal, {
         tipo,
         nombre,
         monto_total: total,
@@ -1487,7 +1499,9 @@
         metodo
       });
 
-      document.getElementById('modal-edit-deuda').classList.add('hidden');
+      if (ok) {
+        document.getElementById('modal-edit-deuda').classList.add('hidden');
+      }
     }
 
     // --- EDICIÓN DIRECTA DE SERVICIOS FIJOS ---
@@ -1503,25 +1517,27 @@
       document.getElementById('modal-edit-servicio').classList.remove('hidden');
     }
 
-    function submitEditarServicio() {
+    async function submitEditarServicio() {
       const id = document.getElementById('in-edit-servicio-id').value;
       const servicio = document.getElementById('in-edit-servicio-nombre').value.trim();
-      const monto = parseFloat(document.getElementById('in-edit-servicio-monto').value) || 0;
+      const monto = DataService.parseMonto(document.getElementById('in-edit-servicio-monto').value);
       const vencimiento = parseInt(document.getElementById('in-edit-servicio-venc').value, 10) || 1;
 
-      DataService.updateServicio(id, { servicio, monto, vencimiento });
-      document.getElementById('modal-edit-servicio').classList.add('hidden');
-    }
-
-    function handleAddMetodo() {
-      const input = document.getElementById('new-metodo-name');
-      if (input && input.value.trim()) {
-        DataService.addMetodo(input.value.trim());
-        input.value = '';
+      const ok = await DataService.updateServicio(id, { servicio, monto, vencimiento });
+      if (ok) {
+        document.getElementById('modal-edit-servicio').classList.add('hidden');
       }
     }
 
-    function submitInversion() {
+    async function handleAddMetodo() {
+      const input = document.getElementById('new-metodo-name');
+      if (input && input.value.trim()) {
+        const ok = await DataService.addMetodo(input.value.trim());
+        if (ok) input.value = '';
+      }
+    }
+
+    async function submitInversion() {
       const nombre = document.getElementById('in-inv-nombre').value;
       const tipo = document.getElementById('in-inv-tipo').value;
       const plataforma = document.getElementById('in-inv-plataforma').value;
@@ -1529,13 +1545,15 @@
       const actual = document.getElementById('in-inv-actual').value || invertido;
       const moneda = document.getElementById('in-inv-moneda').value;
       const notas = document.getElementById('in-inv-notas').value;
-      DataService.addInversion({ nombre, tipo, plataforma, monto_invertido: invertido, valor_actual: actual, moneda, notas });
-      document.getElementById('modal-add-inversion').classList.add('hidden');
-      document.getElementById('in-inv-nombre').value = '';
-      document.getElementById('in-inv-plataforma').value = '';
-      document.getElementById('in-inv-invertido').value = '';
-      document.getElementById('in-inv-actual').value = '';
-      document.getElementById('in-inv-notas').value = '';
+      const ok = await DataService.addInversion({ nombre, tipo, plataforma, monto_invertido: invertido, valor_actual: actual, moneda, notas });
+      if (ok) {
+        document.getElementById('modal-add-inversion').classList.add('hidden');
+        document.getElementById('in-inv-nombre').value = '';
+        document.getElementById('in-inv-plataforma').value = '';
+        document.getElementById('in-inv-invertido').value = '';
+        document.getElementById('in-inv-actual').value = '';
+        document.getElementById('in-inv-notas').value = '';
+      }
     }
 
     function saveSupabaseSettings() {
@@ -1555,13 +1573,13 @@
     }
 
     // Limpieza forzada de cachés antiguas en el navegador móvil
-    if ('caches' in window && localStorage.getItem('CFP_CACHE_PURGED_V14') !== 'true') {
+    if ('caches' in window && localStorage.getItem('CFP_CACHE_PURGED_V15') !== 'true') {
       caches.keys().then(keys => {
         return Promise.all(keys.map(k => {
-          if (k !== 'cfp-cache-v14') return caches.delete(k);
+          if (k !== 'cfp-cache-v15') return caches.delete(k);
         }));
       }).then(() => {
-        localStorage.setItem('CFP_CACHE_PURGED_V14', 'true');
+        localStorage.setItem('CFP_CACHE_PURGED_V15', 'true');
         console.log('🧹 Cachés obsoletas eliminadas del dispositivo');
       });
     }
@@ -1569,7 +1587,7 @@
     // Registro de Service Worker para PWA / TWA con auto-actualización forzada
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js?v=14')
+        navigator.serviceWorker.register('/sw.js?v=15')
           .then(reg => {
             console.log('✅ Service Worker PWA registrado:', reg.scope);
             reg.update();

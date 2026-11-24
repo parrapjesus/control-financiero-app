@@ -13,13 +13,16 @@ const AppState = {
     prestamos: [],
     historial: [],
     inversiones: [],
-    metodos: ['Efectivo', 'Mercado Pago', 'Transferencia', 'Tarjeta de Crédito', 'Mercado Crédito']
+    metodos: ['Santander', 'Efectivo', 'Mercado Pago', 'Transferencia', 'TDC', 'Mercado Crédito', 'ARQ']
   },
   currentTab: 'dashboard',
   chartInstance: null,
   flowChartInstance: null,
   investmentsChartInstance: null,
-  lastSyncAt: null
+  lastSyncAt: null,
+  isPullingSheets: false,
+  deudasSupportsMC: null,
+  hasInversionesTable: null
 };
 
 function getTodayString() {
@@ -30,20 +33,194 @@ function getTodayString() {
   return `${year}-${month}-${day}`;
 }
 
+function formatDateES(isoOrDate) {
+  if (!isoOrDate) return '';
+  const d = isoOrDate instanceof Date ? isoOrDate : new Date(isoOrDate);
+  if (!isNaN(d.getTime())) {
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    return `${day}/${month}/${d.getFullYear()}`;
+  }
+  return String(isoOrDate);
+}
+
 // ==============================================================================
-// 1. GESTIÓN DE DATOS (CRUD CON SUPABASE Y FALLBACK LOCALSTORAGE)
+// 1. GESTIÓN DE DATOS (CRUD CON SUPABASE, GOOGLE SHEETS DIRECTO Y LOCALSTORAGE)
 // ==============================================================================
 
 const DataService = {
-  // Carga inicial de datos
-  async loadAllData(silent = false) {
+  // Convierte cualquier monto (ej. 12200, "12.200", "$324.930,96", "12200,50") en número válido
+  parseMonto(raw, allowNegative = false) {
+    if (typeof raw === 'number') {
+      if (isNaN(raw)) return 0;
+      const rounded = Math.round(raw * 100) / 100;
+      return allowNegative ? rounded : Math.abs(rounded);
+    }
+    if (raw === null || raw === undefined) return 0;
+    const cleaned = String(raw).replace(/[^0-9.,-]/g, '').trim();
+    if (!cleaned) return 0;
+
+    const isNeg = cleaned.startsWith('-');
+    let u = cleaned.replace(/-/g, '');
+    if (!u) return 0;
+
+    if (u.includes(',') && u.includes('.')) {
+      if (u.lastIndexOf(',') > u.lastIndexOf('.')) {
+        u = u.replace(/\./g, '').replace(',', '.');
+      } else {
+        u = u.replace(/,/g, '');
+      }
+    } else if (u.includes(',')) {
+      if (/^[1-9]\d{0,2}(,\d{3})+$/.test(u)) {
+        u = u.replace(/,/g, '');
+      } else {
+        u = u.replace(',', '.');
+      }
+    } else if (u.includes('.')) {
+      // En formato argentino "9.000", "12.200", "1.200.000" son miles
+      if (/^[1-9]\d{0,2}(\.\d{3})+$/.test(u)) {
+        u = u.replace(/\./g, '');
+      }
+    }
+
+    const num = parseFloat(u);
+    if (isNaN(num)) return 0;
+    const rounded = Math.round(num * 100) / 100;
+    return allowNegative && isNeg ? -rounded : rounded;
+  },
+
+  isValidUUID(str) {
+    if (!str) return false;
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(str).trim());
+  },
+
+  deterministicUUID(seed) {
+    const str = String(seed || '');
+    let h1 = 0x811c9dc5, h2 = 0x811c9dc5, h3 = 0x811c9dc5, h4 = 0x811c9dc5;
+    for (let i = 0; i < str.length; i++) {
+      const c = str.charCodeAt(i);
+      h1 = Math.imul(h1 ^ c, 0x01000193) >>> 0;
+      h2 = Math.imul(h2 ^ ((c + i * 17) & 0xff), 0x01000193) >>> 0;
+      h3 = Math.imul(h3 ^ ((c ^ (i * 31)) & 0xff), 0x01000193) >>> 0;
+      h4 = Math.imul(h4 ^ ((c + i * 53) & 0xff), 0x01000193) >>> 0;
+    }
+    const hex = (n) => n.toString(16).padStart(8, '0');
+    const p1 = hex(h1);
+    const p2 = hex(h2);
+    const p3 = hex(h3);
+    const p4 = hex(h4);
+    return `${p1}-${p2.slice(0, 4)}-4${p2.slice(5, 8)}-a${p3.slice(1, 4)}-${p3.slice(4, 8)}${p4}`;
+  },
+
+  normalizeDateISO(raw) {
+    if (!raw) return getTodayString();
+    const parsed = Calculations.parseDateParts(raw);
+    if (parsed && parsed.year >= 2000 && parsed.month >= 1 && parsed.month <= 12 && parsed.day >= 1 && parsed.day <= 31) {
+      return `${parsed.year}-${String(parsed.month).padStart(2, '0')}-${String(parsed.day).padStart(2, '0')}`;
+    }
+    return getTodayString();
+  },
+
+  normalizeMetodo(raw) {
+    if (!raw) return 'Santander';
+    const m = String(raw).trim();
+    const low = m.toLowerCase();
+    if (low.includes('santander')) return 'Santander';
+    if (low.includes('arq')) return 'ARQ';
+    if (low.includes('bhd')) return 'BHD';
+    if (low.includes('brubank')) return 'brubank';
+    if (low.includes('mercado pago') || low === 'mp') return 'Mercado Pago';
+    if (low.includes('mercado cr')) return 'Mercado Crédito';
+    if (low.includes('efectivo')) return 'Efectivo';
+    if (low.includes('transfer')) return 'Transferencia';
+    if (low === 'tdc' || low.includes('tarjeta')) return 'TDC';
+    return m;
+  },
+
+  parseCSV(text) {
+    const rows = [];
+    let row = [];
+    let field = '';
+    let inQuotes = false;
+    const src = String(text || '');
+    for (let i = 0; i < src.length; i++) {
+      const ch = src[i];
+      if (inQuotes) {
+        if (ch === '"') {
+          if (src[i + 1] === '"') {
+            field += '"';
+            i++;
+          } else {
+            inQuotes = false;
+          }
+        } else {
+          field += ch;
+        }
+      } else if (ch === '"') {
+        inQuotes = true;
+      } else if (ch === ',') {
+        row.push(field);
+        field = '';
+      } else if (ch === '\n' || ch === '\r') {
+        if (ch === '\r' && src[i + 1] === '\n') i++;
+        row.push(field);
+        field = '';
+        if (row.some(cell => cell.trim() !== '')) rows.push(row);
+        row = [];
+      } else {
+        field += ch;
+      }
+    }
+    if (field !== '' || row.length > 0) {
+      row.push(field);
+      if (row.some(cell => cell.trim() !== '')) rows.push(row);
+    }
+    return rows;
+  },
+
+  getDeletedIds() {
+    try {
+      const raw = localStorage.getItem('CFP_DELETED_IDS');
+      return new Set(raw ? JSON.parse(raw) : []);
+    } catch (e) {
+      return new Set();
+    }
+  },
+
+  markDeletedId(id) {
+    if (!id) return;
+    try {
+      const set = DataService.getDeletedIds();
+      set.add(String(id).toLowerCase());
+      localStorage.setItem('CFP_DELETED_IDS', JSON.stringify(Array.from(set).slice(-300)));
+    } catch (e) {}
+  },
+
+  getImportedSheetKeys() {
+    try {
+      const raw = localStorage.getItem('CFP_IMPORTED_SHEET_KEYS');
+      return new Set(raw ? JSON.parse(raw) : []);
+    } catch (e) {
+      return new Set();
+    }
+  },
+
+  markImportedSheetKey(key) {
+    if (!key) return;
+    try {
+      const set = DataService.getImportedSheetKeys();
+      set.add(String(key).toLowerCase());
+      localStorage.setItem('CFP_IMPORTED_SHEET_KEYS', JSON.stringify(Array.from(set).slice(-500)));
+    } catch (e) {}
+  },
+
+  async ensureClient() {
     let client = SupabaseConfig.client;
     if (!client && SupabaseConfig.isConfigured()) {
       client = SupabaseConfig.init();
     }
-    // Si Supabase CDN aún está descargando en el teléfono, esperar hasta 1.5s
     if (!client && typeof window !== 'undefined' && !window.supabase) {
-      for (let i = 0; i < 15; i++) {
+      for (let i = 0; i < 20; i++) {
         await new Promise(r => setTimeout(r, 100));
         if (window.supabase) {
           client = SupabaseConfig.init();
@@ -51,31 +228,42 @@ const DataService = {
         }
       }
     }
+    return client;
+  },
+
+  // Carga inicial de datos desde Supabase + auto-importación de novedades en Google Sheets
+  async loadAllData(silent = false, skipSheetPull = false) {
+    const client = await DataService.ensureClient();
 
     if (client && SupabaseConfig.isConfigured()) {
       try {
         console.log('🔄 Sincronizando con Supabase...');
         const [
-          { data: ingresos },
-          { data: diarios },
-          { data: servicios },
-          { data: deudas },
-          { data: historial },
-          { data: metodos }
+          resIngresos,
+          resDiarios,
+          resServicios,
+          resDeudas,
+          resHistorial,
+          resMetodos
         ] = await Promise.all([
           client.from('ingresos').select('*').order('fecha', { ascending: false }),
           client.from('gastos_diarios').select('*').order('fecha', { ascending: false }),
           client.from('gastos_fijos').select('*').order('vencimiento', { ascending: true }),
           client.from('deudas').select('*').order('created_at', { ascending: false }),
-          client.from('historial').select('*').order('fecha', { ascending: false }).limit(100),
+          client.from('historial').select('*').order('fecha', { ascending: false }).limit(150),
           client.from('metodos_pago').select('*')
         ]);
 
-        AppState.data.ingresos = (ingresos || []).map(i => ({ ...i, monto: parseFloat(i.monto) }));
-        AppState.data.diarios = (diarios || []).map(d => ({ ...d, monto: parseFloat(d.monto) }));
-        AppState.data.servicios = (servicios || []).map(s => ({ ...s, monto: parseFloat(s.monto) }));
-        
-        const rawDeudas = deudas || [];
+        const firstErr = resIngresos.error || resDiarios.error || resServicios.error || resDeudas.error || resHistorial.error;
+        if (firstErr) {
+          throw new Error(firstErr.message || 'Error consultando tablas de Supabase');
+        }
+
+        AppState.data.ingresos = (resIngresos.data || []).map(i => ({ ...i, monto: DataService.parseMonto(i.monto) }));
+        AppState.data.diarios = (resDiarios.data || []).map(d => ({ ...d, monto: DataService.parseMonto(d.monto) }));
+        AppState.data.servicios = (resServicios.data || []).map(s => ({ ...s, monto: DataService.parseMonto(s.monto) }));
+
+        const rawDeudas = resDeudas.data || [];
         const isMercadoCredito = (d) =>
           d.tipo === 'mercado_credito' ||
           (d.metodo || '').toLowerCase().includes('mercado cr');
@@ -84,10 +272,10 @@ const DataService = {
           id: d.id,
           compra: d.nombre,
           prestamo: d.nombre,
-          monto_total: parseFloat(d.monto_total),
-          cuotas_totales: d.cuotas_totales,
-          cuotas_pagadas: d.cuotas_pagadas,
-          monto_cuota: parseFloat(d.monto_cuota),
+          monto_total: DataService.parseMonto(d.monto_total),
+          cuotas_totales: parseInt(d.cuotas_totales, 10) || 1,
+          cuotas_pagadas: parseInt(d.cuotas_pagadas, 10) || 0,
+          monto_cuota: DataService.parseMonto(d.monto_cuota),
           fecha_inicio: d.fecha_inicio,
           metodo: d.metodo
         });
@@ -96,39 +284,52 @@ const DataService = {
         AppState.data.mercadoCredito = rawDeudas.filter(d => isMercadoCredito(d)).map(mapDeuda);
         AppState.data.prestamos = rawDeudas.filter(d => !isMercadoCredito(d) && d.tipo === 'prestamo').map(mapDeuda);
 
-        AppState.data.historial = (historial || []).map(h => ({
+        AppState.data.historial = (resHistorial.data || []).map(h => ({
           ...h,
-          monto: parseFloat(h.monto),
-          fecha: new Date(h.fecha).toLocaleDateString('es-AR')
+          monto: DataService.parseMonto(h.monto, true),
+          fecha_iso: h.fecha,
+          fecha: formatDateES(h.fecha)
         }));
 
-        if (metodos && metodos.length > 0) {
-          AppState.data.metodos = metodos.map(m => m.nombre);
+        if (resMetodos.data && resMetodos.data.length > 0) {
+          const nombres = resMetodos.data.map(m => m.nombre).filter(Boolean);
+          // Priorizar Santander primero si existe para evitar cargar por accidente en Efectivo
+          AppState.data.metodos = nombres.includes('Santander')
+            ? ['Santander', ...nombres.filter(n => n !== 'Santander')]
+            : nombres;
         }
 
-        // Cargar inversiones de forma segura (por si la tabla aún no fue creada en Supabase)
+        // Cargar inversiones sin spamear 404 si la tabla opcional no existe
         AppState.data.inversiones = DataService.loadLocalInversiones();
-        try {
-          const { data: inv, error: invError } = await client.from('inversiones').select('*').order('created_at', { ascending: false });
-          if (!invError && Array.isArray(inv)) {
-            AppState.data.inversiones = inv.map(item => ({
-              ...item,
-              monto_invertido: parseFloat(item.monto_invertido) || 0,
-              valor_actual: parseFloat(item.valor_actual) || 0,
-              rendimiento_pct: parseFloat(item.rendimiento_pct) || 0
-            }));
+        if (AppState.hasInversionesTable !== false) {
+          try {
+            const { data: inv, error: invError } = await client.from('inversiones').select('*').order('created_at', { ascending: false });
+            if (invError) {
+              if (invError.code === 'PGRST205' || String(invError.message || '').includes('inversiones')) {
+                AppState.hasInversionesTable = false;
+              }
+            } else if (Array.isArray(inv)) {
+              AppState.hasInversionesTable = true;
+              AppState.data.inversiones = inv.map(item => ({
+                ...item,
+                monto_invertido: DataService.parseMonto(item.monto_invertido),
+                valor_actual: DataService.parseMonto(item.valor_actual),
+                rendimiento_pct: DataService.parseMonto(item.rendimiento_pct, true)
+              }));
+            }
+          } catch (invErr) {
+            AppState.hasInversionesTable = false;
           }
-        } catch (invErr) {
-          console.info('Tabla inversiones opcional no disponible aún en Supabase; usando respaldo local.');
         }
 
+        DataService.saveToLocalStorage();
         AppState.lastSyncAt = new Date();
         UI.updateSyncTimestamp();
 
-        if (!silent) UI.showNotification('Datos sincronizados con Supabase', 'success');
+        if (!silent) UI.showNotification('Datos sincronizados correctamente', 'success');
       } catch (error) {
         console.error('Error al cargar datos desde Supabase:', error);
-        UI.showNotification('Error al conectar con Supabase. Usando datos locales.', 'error');
+        UI.showNotification('Error al conectar con Supabase: ' + (error.message || 'usando respaldo local'), 'error');
         DataService.loadFromLocalStorage();
       }
     } else {
@@ -136,45 +337,231 @@ const DataService = {
     }
 
     UI.renderAll();
+
+    // Auto-importar filas nuevas desde Google Sheets en segundo plano al abrir/volver a la app
+    if (!skipSheetPull && client && SupabaseConfig.isConfigured()) {
+      DataService.pullNewFromGoogleSheet().then(pullRes => {
+        if (pullRes && pullRes.imported > 0) {
+          UI.renderAll();
+          UI.showNotification(`Google Sheets sincronizado (+${pullRes.imported} nuevo${pullRes.imported > 1 ? 's' : ''})`, 'success');
+        }
+      }).catch(err => console.warn('Aviso lectura directa de Google Sheets:', err));
+    }
+  },
+
+  // Lee directamente el Google Sheet (gviz CSV) e importa gastos/ingresos nuevos sin requerir Apps Script
+  async pullNewFromGoogleSheet() {
+    if (AppState.isPullingSheets) return { ok: true, imported: 0 };
+    const client = await DataService.ensureClient();
+    if (!client || !SupabaseConfig.isConfigured()) return { ok: false, imported: 0 };
+
+    const sheetId = typeof SupabaseConfig.getGoogleSheetId === 'function' ? SupabaseConfig.getGoogleSheetId() : '';
+    if (!sheetId) return { ok: false, imported: 0 };
+
+    AppState.isPullingSheets = true;
+    let importedGastos = 0;
+    let importedIngresos = 0;
+
+    const fetchSheetRows = async (tabName) => {
+      const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      const timer = controller ? setTimeout(() => controller.abort(), 12000) : null;
+      try {
+        const url = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tabName)}&_t=${Date.now()}`;
+        const resp = await fetch(url, {
+          method: 'GET',
+          signal: controller ? controller.signal : undefined
+        });
+        if (!resp.ok) return null;
+        const txt = await resp.text();
+        if (!txt || txt.trim().startsWith('<!DOCTYPE') || txt.trim().startsWith('<html')) return null;
+        const rows = DataService.parseCSV(txt);
+        if (rows.length < 2) return [];
+        const headerStr = rows[0].join('|').toLowerCase();
+        if (!headerStr.includes('id') && !headerStr.includes('monto') && !headerStr.includes('descrip')) return null;
+        return rows.slice(1);
+      } catch (e) {
+        return null;
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    };
+
+    try {
+      const deletedIds = DataService.getDeletedIds();
+      const importedKeys = DataService.getImportedSheetKeys();
+
+      // 1. Procesar Gastos_Diarios nuevos del Sheet
+      const rowsGastos = await fetchSheetRows('Gastos_Diarios');
+      if (Array.isArray(rowsGastos) && rowsGastos.length > 0) {
+        const existingIds = new Set((AppState.data.diarios || []).map(d => String(d.id || '').toLowerCase()));
+        const existingSigs = new Set((AppState.data.diarios || []).map(d =>
+          `${(d.descripcion || '').trim().toLowerCase()}|${Math.round(DataService.parseMonto(d.monto))}|${d.fecha}`
+        ));
+        const deletedGastoSigs = new Set(
+          (AppState.data.historial || [])
+            .filter(h => (h.categoria || '').toLowerCase().includes('eliminación gasto'))
+            .map(h => `${(h.descripcion || '').trim().toLowerCase()}|${Math.round(Math.abs(DataService.parseMonto(h.monto, true)))}`)
+        );
+
+        for (let idx = 0; idx < rowsGastos.length; idx++) {
+          const r = rowsGastos[idx];
+          const colId = String(r[0] || '').trim();
+          const descripcion = String(r[1] || '').trim();
+          const monto = DataService.parseMonto(r[2]);
+          const fechaIso = DataService.normalizeDateISO(r[3]);
+          const metodo = DataService.normalizeMetodo(r[4]);
+
+          if (!descripcion || monto <= 0 || colId.toUpperCase().startsWith('FIJO-')) continue;
+
+          const rowUuid = DataService.isValidUUID(colId)
+            ? colId.toLowerCase()
+            : DataService.deterministicUUID(`gd|${descripcion.toLowerCase()}|${Math.round(monto * 100)}|${fechaIso}|${metodo.toLowerCase()}|r${idx + 2}`);
+          const sig = `${descripcion.toLowerCase()}|${Math.round(monto)}|${fechaIso}`;
+          const delSig = `${descripcion.toLowerCase()}|${Math.round(monto)}`;
+
+          if (
+            existingIds.has(rowUuid) ||
+            existingSigs.has(sig) ||
+            deletedIds.has(rowUuid) ||
+            deletedGastoSigs.has(delSig) ||
+            importedKeys.has(rowUuid)
+          ) {
+            continue;
+          }
+
+          const { data, error } = await client
+            .from('gastos_diarios')
+            .upsert([{ id: rowUuid, descripcion, monto, metodo, fecha: fechaIso }], { onConflict: 'id', ignoreDuplicates: true })
+            .select();
+
+          if (!error && data && data[0]) {
+            existingIds.add(rowUuid);
+            existingSigs.add(sig);
+            DataService.markImportedSheetKey(rowUuid);
+            AppState.data.diarios.unshift({ ...data[0], monto: DataService.parseMonto(data[0].monto) });
+            await DataService.ajustarCuenta(metodo, -monto);
+            await DataService.logHistorial('Gasto Diario', descripcion, monto, metodo);
+            importedGastos++;
+          }
+        }
+      }
+
+      // 2. Procesar INGRESOS nuevos del Sheet
+      const rowsIngresos = await fetchSheetRows('INGRESOS');
+      if (Array.isArray(rowsIngresos) && rowsIngresos.length > 0) {
+        const existingIngIds = new Set((AppState.data.ingresos || []).map(i => String(i.id || '').toLowerCase()));
+        const knownHistIngSigs = new Set(
+          (AppState.data.historial || [])
+            .filter(h => {
+              const cat = (h.categoria || '').toLowerCase();
+              return cat === 'ingreso' || cat.includes('eliminación ingreso');
+            })
+            .map(h => `${(h.descripcion || '').trim().toLowerCase()}|${Math.round(Math.abs(DataService.parseMonto(h.monto, true)))}`)
+        );
+
+        for (let idx = 0; idx < rowsIngresos.length; idx++) {
+          const r = rowsIngresos[idx];
+          const colId = String(r[0] || '').trim();
+          const descripcion = String(r[1] || '').trim();
+          const monto = DataService.parseMonto(r[2]);
+          const fechaIso = DataService.normalizeDateISO(r[3]);
+          const metodo = DataService.normalizeMetodo(r[4]);
+
+          if (!descripcion || monto <= 0) continue;
+
+          const rowUuid = DataService.isValidUUID(colId)
+            ? colId.toLowerCase()
+            : DataService.deterministicUUID(`ing|${descripcion.toLowerCase()}|${Math.round(monto * 100)}|${fechaIso}|${metodo.toLowerCase()}|r${idx + 2}`);
+          const histSig = `${descripcion.toLowerCase()}|${Math.round(monto)}`;
+
+          if (
+            existingIngIds.has(rowUuid) ||
+            knownHistIngSigs.has(histSig) ||
+            deletedIds.has(rowUuid) ||
+            importedKeys.has(rowUuid)
+          ) {
+            continue;
+          }
+
+          const okIng = await DataService.creditarCuentaOInsertarIngreso(descripcion, monto, metodo, fechaIso, rowUuid);
+          if (okIng) {
+            existingIngIds.add(rowUuid);
+            knownHistIngSigs.add(histSig);
+            DataService.markImportedSheetKey(rowUuid);
+            await DataService.logHistorial('Ingreso', descripcion, monto, metodo);
+            importedIngresos++;
+          }
+        }
+      }
+
+      if (importedGastos + importedIngresos > 0) {
+        DataService.saveToLocalStorage();
+      }
+
+      return {
+        ok: true,
+        imported: importedGastos + importedIngresos,
+        importedGastos,
+        importedIngresos
+      };
+    } finally {
+      AppState.isPullingSheets = false;
+    }
   },
 
   async syncGoogleSheets() {
-    const syncUrl = typeof SupabaseConfig.getSheetsSyncUrl === 'function' ? SupabaseConfig.getSheetsSyncUrl() : '';
-    if (!syncUrl) return { configured: false, ok: false };
+    let subidosTotal = 0;
+    let actualizadosTotal = 0;
+    let appsScriptError = null;
 
-    const sep = syncUrl.includes('?') ? '&' : '?';
-    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    const timeoutId = controller ? setTimeout(() => controller.abort(), 18000) : null;
+    // 1. Si hay un endpoint Web App de Apps Script válido (/macros/s/.../exec), invocarlo primero
+    const syncUrl = typeof SupabaseConfig.getAppsScriptWebAppUrl === 'function'
+      ? SupabaseConfig.getAppsScriptWebAppUrl()
+      : '';
 
-    try {
-      const resp = await fetch(`${syncUrl}${sep}action=sync&_t=${Date.now()}`, {
-        method: 'GET',
-        redirect: 'follow',
-        signal: controller ? controller.signal : undefined
-      });
-      if (!resp.ok) {
-        return { configured: true, ok: false, error: `HTTP ${resp.status}` };
-      }
-      const rawText = await resp.text();
-      let payload = {};
+    if (syncUrl) {
+      const sep = syncUrl.includes('?') ? '&' : '?';
+      const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      const timeoutId = controller ? setTimeout(() => controller.abort(), 15000) : null;
       try {
-        payload = JSON.parse(rawText);
-      } catch (parseErr) {
-        return { configured: true, ok: false, error: 'Respuesta inválida del Web App de Sheets' };
+        const resp = await fetch(`${syncUrl}${sep}action=sync&_t=${Date.now()}`, {
+          method: 'GET',
+          redirect: 'follow',
+          signal: controller ? controller.signal : undefined
+        });
+        if (resp.ok) {
+          const payload = JSON.parse(await resp.text());
+          if (payload && payload.ok !== false) {
+            subidosTotal += payload.subidosTotal !== undefined
+              ? (Number(payload.subidosTotal) || 0)
+              : (Number(payload.subidosGastos) || 0) + (Number(payload.subidosIngresos) || 0) + (Number(payload.subidosFijos) || 0) + (Number(payload.subidosDeudas) || 0) + (Number(payload.subidosInversiones) || 0);
+            actualizadosTotal += Number(payload.actualizadosTotal) || 0;
+          } else if (payload && payload.error) {
+            appsScriptError = payload.error;
+          }
+        }
+      } catch (err) {
+        appsScriptError = err.name === 'AbortError' ? 'Tiempo agotado en Apps Script' : err.message;
+      } finally {
+        if (timeoutId) clearTimeout(timeoutId);
       }
-      if (payload && payload.ok === false) {
-        return { configured: true, ok: false, error: payload.error || 'Error en Apps Script' };
-      }
-      const subidosTotal = payload.subidosTotal !== undefined
-        ? (Number(payload.subidosTotal) || 0)
-        : (Number(payload.subidosGastos) || 0) + (Number(payload.subidosIngresos) || 0) + (Number(payload.subidosFijos) || 0) + (Number(payload.subidosDeudas) || 0) + (Number(payload.subidosInversiones) || 0);
-      const actualizadosTotal = Number(payload.actualizadosTotal) || 0;
-      return { configured: true, ok: true, subidosTotal, actualizadosTotal, payload };
-    } catch (err) {
-      return { configured: true, ok: false, error: err.name === 'AbortError' ? 'Tiempo de espera agotado' : err.message };
-    } finally {
-      if (timeoutId) clearTimeout(timeoutId);
     }
+
+    // 2. Recargar estado base de Supabase y ejecutar lectura directa de Google Sheets (sin Apps Script)
+    await DataService.loadAllData(true, true);
+    const directRes = await DataService.pullNewFromGoogleSheet();
+    if (directRes && directRes.imported > 0) {
+      subidosTotal += directRes.imported;
+      await DataService.loadAllData(true, true);
+    }
+
+    return {
+      configured: true,
+      ok: true,
+      subidosTotal,
+      actualizadosTotal,
+      appsScriptError
+    };
   },
 
   async refreshAll(btn) {
@@ -182,21 +569,17 @@ const DataService = {
     if (icon) icon.classList.add('fa-spin');
     try {
       const sheetsRes = await DataService.syncGoogleSheets();
-      if (sheetsRes.configured && sheetsRes.ok) {
-        await DataService.loadAllData(true);
-        const partes = [];
-        if (sheetsRes.subidosTotal > 0) partes.push(`+${sheetsRes.subidosTotal} nuevos`);
-        if (sheetsRes.actualizadosTotal > 0) partes.push(`${sheetsRes.actualizadosTotal} editados`);
-        const msg = partes.length > 0
-          ? `Google Sheets sincronizado (${partes.join(', ')}) y tablero actualizado`
-          : 'Google Sheets y Supabase actualizados';
-        UI.showNotification(msg, 'success');
-      } else if (sheetsRes.configured && !sheetsRes.ok) {
-        await DataService.loadAllData(true);
-        UI.showNotification(`Supabase actualizado (Sheets: ${sheetsRes.error})`, 'warning');
-      } else {
-        await DataService.loadAllData(false);
-      }
+      UI.renderAll();
+      const partes = [];
+      if (sheetsRes.subidosTotal > 0) partes.push(`+${sheetsRes.subidosTotal} nuevos`);
+      if (sheetsRes.actualizadosTotal > 0) partes.push(`${sheetsRes.actualizadosTotal} editados`);
+      const msg = partes.length > 0
+        ? `Google Sheets sincronizado (${partes.join(', ')}) y tablero actualizado`
+        : 'Google Sheets y Supabase actualizados';
+      UI.showNotification(msg, 'success');
+    } catch (err) {
+      console.error('Error al actualizar:', err);
+      UI.showNotification('Error al actualizar datos: ' + (err.message || 'revisa tu conexión'), 'error');
     } finally {
       if (icon) setTimeout(() => icon.classList.remove('fa-spin'), 400);
     }
@@ -228,112 +611,154 @@ const DataService = {
         if (!Array.isArray(AppState.data.mercadoCredito)) {
           AppState.data.mercadoCredito = [];
         }
+        if (!Array.isArray(AppState.data.metodos) || AppState.data.metodos.length === 0) {
+          AppState.data.metodos = ['Santander', 'Efectivo', 'Mercado Pago', 'Transferencia', 'TDC', 'Mercado Crédito', 'ARQ'];
+        }
       } catch (e) {
         console.error('Error parseando datos locales', e);
       }
-    } else {
-      // Datos semilla iniciales para demo
-      AppState.data = {
-        ingresos: [
-          { id: '1', descripcion: 'Sueldo Principal', monto: 850000, fecha: new Date().toISOString().split('T')[0], metodo: 'Transferencia' }
-        ],
-        diarios: [
-          { id: '1', descripcion: 'Supermercado', monto: 24500, fecha: new Date().toISOString().split('T')[0], metodo: 'Mercado Pago' },
-          { id: '2', descripcion: 'Combustible', monto: 18000, fecha: new Date().toISOString().split('T')[0], metodo: 'Efectivo' }
-        ],
-        servicios: [
-          { id: '1', servicio: 'Internet Fibra', monto: 18500, vencimiento: 10, estado: 'Pendiente' },
-          { id: '2', servicio: 'Electricidad', monto: 22000, vencimiento: 15, estado: 'Pendiente' },
-          { id: '3', servicio: 'Alquiler', monto: 250000, vencimiento: 5, estado: 'Pagado' }
-        ],
-        tarjetas: [
-          { id: '1', compra: 'Notebook', monto_total: 600000, cuotas_totales: 12, cuotas_pagadas: 4, monto_cuota: 50000, fecha_inicio: '2025-10-01', metodo: 'Tarjeta de Crédito' }
-        ],
-        mercadoCredito: [],
-        prestamos: [],
-        historial: [
-          { id: '1', fecha: new Date().toLocaleDateString('es-AR'), categoria: 'Ingreso', descripcion: 'Sueldo Principal', monto: 850000, metodo: 'Transferencia' },
-          { id: '2', fecha: new Date().toLocaleDateString('es-AR'), categoria: 'Servicio Pagado', descripcion: 'Alquiler', monto: 250000, metodo: 'Transferencia' }
-        ],
-        inversiones: [],
-        metodos: ['Efectivo', 'Mercado Pago', 'Transferencia', 'Tarjeta de Crédito', 'Mercado Crédito']
-      };
-      DataService.saveToLocalStorage();
     }
   },
 
   saveToLocalStorage() {
-    localStorage.setItem('CFP_LOCAL_DATA', JSON.stringify(AppState.data));
+    try {
+      localStorage.setItem('CFP_LOCAL_DATA', JSON.stringify(AppState.data));
+    } catch (e) {}
   },
 
   // Registrar movimiento en Historial
   async logHistorial(categoria, descripcion, monto, metodo) {
     const hoy = new Date();
+    const valMonto = DataService.parseMonto(monto, true);
     const item = {
       id: Date.now().toString(),
-      fecha: hoy.toLocaleDateString('es-AR'),
+      fecha_iso: hoy.toISOString(),
+      fecha: formatDateES(hoy),
       categoria,
       descripcion,
-      monto: parseFloat(monto),
+      monto: valMonto,
       metodo: metodo || 'General'
     };
 
     AppState.data.historial.unshift(item);
 
-    const client = SupabaseConfig.client;
+    const client = await DataService.ensureClient();
     if (client && SupabaseConfig.isConfigured()) {
       try {
-        await client.from('historial').insert([{
+        const { data, error } = await client.from('historial').insert([{
           categoria,
           descripcion,
-          monto: parseFloat(monto),
+          monto: valMonto,
           metodo: metodo || 'General'
-        }]);
+        }]).select();
+        if (!error && data && data[0]) {
+          item.id = data[0].id;
+        }
       } catch (err) {
         console.error('Error guardando en historial Supabase:', err);
       }
-    } else {
-      DataService.saveToLocalStorage();
     }
+    DataService.saveToLocalStorage();
+  },
+
+  // Acredita dinero en la cuenta existente de ese banco/billetera o crea la cuenta si no existe
+  async creditarCuentaOInsertarIngreso(descripcion, valMonto, metodo, fechaVal, preferredId = null) {
+    const metodoClean = DataService.normalizeMetodo(metodo);
+    const metLow = metodoClean.toLowerCase();
+    const client = await DataService.ensureClient();
+    const isSupa = Boolean(client && SupabaseConfig.isConfigured());
+
+    const existente = (AppState.data.ingresos || []).find(i => (i.metodo || '').trim().toLowerCase() === metLow);
+
+    if (existente) {
+      let base = DataService.parseMonto(existente.monto);
+      if (isSupa) {
+        try {
+          const { data: fresh } = await client.from('ingresos').select('monto').eq('id', existente.id).single();
+          if (fresh && fresh.monto !== undefined && fresh.monto !== null) {
+            base = DataService.parseMonto(fresh.monto);
+          }
+        } catch (e) {}
+      }
+      const nuevoMonto = Math.round((base + valMonto) * 100) / 100;
+      if (isSupa) {
+        const { error } = await client.from('ingresos').update({
+          monto: nuevoMonto,
+          fecha: fechaVal
+        }).eq('id', existente.id);
+        if (error) {
+          console.error('Error acreditando ingreso en cuenta existente:', error);
+          UI.showNotification('No se pudo actualizar el saldo en Supabase: ' + error.message, 'error');
+          return false;
+        }
+      }
+      existente.monto = nuevoMonto;
+      existente.fecha = fechaVal;
+      return true;
+    }
+
+    const payload = {
+      descripcion: descripcion || `Plata en ${metodoClean}`,
+      monto: valMonto,
+      metodo: metodoClean,
+      fecha: fechaVal
+    };
+    if (preferredId && DataService.isValidUUID(preferredId)) {
+      payload.id = preferredId;
+    }
+
+    if (isSupa) {
+      const { data, error } = await client.from('ingresos').insert([payload]).select();
+      if (error || !data || !data[0]) {
+        console.error('Error insertando nuevo ingreso:', error);
+        UI.showNotification('No se pudo guardar el ingreso: ' + (error?.message || 'revisa tu conexión'), 'error');
+        return false;
+      }
+      AppState.data.ingresos.unshift({ ...data[0], monto: DataService.parseMonto(data[0].monto) });
+      return true;
+    }
+
+    AppState.data.ingresos.unshift({ id: Date.now().toString(), ...payload });
+    return true;
   },
 
   // -------------------------------------------------------------
   // INGRESOS
   // -------------------------------------------------------------
   async addIngreso(descripcion, monto, metodo, fecha) {
+    const descClean = String(descripcion || '').trim();
+    const valMonto = DataService.parseMonto(monto);
     const fechaVal = fecha || getTodayString();
-    const client = SupabaseConfig.client;
+    const metodoClean = DataService.normalizeMetodo(metodo || 'Santander');
 
-    if (client && SupabaseConfig.isConfigured()) {
-      const { data, error } = await client.from('ingresos').insert([{
-        descripcion,
-        monto: parseFloat(monto),
-        metodo,
-        fecha: fechaVal
-      }]).select();
-
-      if (!error && data && data[0]) {
-        AppState.data.ingresos.unshift({ ...data[0], monto: parseFloat(data[0].monto) });
-      }
-    } else {
-      const nuevo = { id: Date.now().toString(), descripcion, monto: parseFloat(monto), metodo, fecha: fechaVal };
-      AppState.data.ingresos.unshift(nuevo);
-      DataService.saveToLocalStorage();
+    if (!descClean || valMonto <= 0) {
+      UI.showNotification('Ingresa una descripción y un monto mayor a 0', 'warning');
+      return false;
     }
 
-    await DataService.logHistorial('Ingreso', descripcion, monto, metodo);
+    const ok = await DataService.creditarCuentaOInsertarIngreso(descClean, valMonto, metodoClean, fechaVal);
+    if (!ok) return false;
+
+    await DataService.logHistorial('Ingreso', descClean, valMonto, metodoClean);
+    DataService.saveToLocalStorage();
     UI.renderAll();
-    UI.showNotification('Ingreso agregado exitosamente', 'success');
+    UI.showNotification(`Ingreso de ${UI.formatCurrency(valMonto)} acreditado en ${metodoClean}`, 'success');
+    return true;
   },
 
   async deleteIngreso(id) {
     const item = AppState.data.ingresos.find(i => i.id === id);
-    const client = SupabaseConfig.client;
+    const client = await DataService.ensureClient();
 
     if (client && SupabaseConfig.isConfigured()) {
-      await client.from('ingresos').delete().eq('id', id);
+      const { error } = await client.from('ingresos').delete().eq('id', id);
+      if (error) {
+        UI.showNotification('No se pudo eliminar la cuenta: ' + error.message, 'error');
+        return false;
+      }
     }
 
+    DataService.markDeletedId(id);
     AppState.data.ingresos = AppState.data.ingresos.filter(i => i.id !== id);
     DataService.saveToLocalStorage();
 
@@ -341,15 +766,16 @@ const DataService = {
       await DataService.logHistorial('Eliminación Ingreso', item.descripcion, -item.monto, item.metodo);
     }
     UI.renderAll();
-    UI.showNotification('Ingreso eliminado', 'info');
+    UI.showNotification('Cuenta / ingreso eliminado', 'info');
+    return true;
   },
 
   // -------------------------------------------------------------
   // TRASPASO ENTRE CUENTAS / BANCOS / EFECTIVO
   // -------------------------------------------------------------
   async transferirDinero(origen, destino, monto, nota) {
-    const valMonto = parseFloat(monto);
-    if (!valMonto || isNaN(valMonto) || valMonto <= 0) {
+    const valMonto = DataService.parseMonto(monto);
+    if (!valMonto || valMonto <= 0) {
       UI.showNotification('Ingresa un monto válido para transferir', 'warning');
       return false;
     }
@@ -362,70 +788,10 @@ const DataService = {
       return false;
     }
 
-    const client = SupabaseConfig.client;
-    const isSupa = client && SupabaseConfig.isConfigured();
+    await DataService.ajustarCuenta(origen, -valMonto);
+    const okDest = await DataService.creditarCuentaOInsertarIngreso(`Plata en ${destino}`, valMonto, destino, getTodayString());
+    if (!okDest) return false;
 
-    // 1. Descontar o ajustar cuenta Origen en AppState.data.ingresos
-    const cuentaOrigen = AppState.data.ingresos.find(i => (i.metodo || '').toLowerCase() === origen.toLowerCase());
-    if (cuentaOrigen) {
-      const nuevoMontoOrigen = Math.max(0, parseFloat(cuentaOrigen.monto) - valMonto);
-      cuentaOrigen.monto = nuevoMontoOrigen;
-      if (isSupa) {
-        try {
-          await client.from('ingresos').update({ monto: nuevoMontoOrigen }).eq('id', cuentaOrigen.id);
-        } catch (e) {
-          console.error('Error actualizando cuenta origen:', e);
-        }
-      }
-    } else {
-      const nuevoOrigen = {
-        descripcion: `Fondo en ${origen}`,
-        monto: 0,
-        metodo: origen,
-        fecha: getTodayString()
-      };
-      if (isSupa) {
-        try {
-          const { data } = await client.from('ingresos').insert([nuevoOrigen]).select();
-          if (data && data[0]) nuevoOrigen.id = data[0].id;
-        } catch (e) {}
-      } else {
-        nuevoOrigen.id = Date.now().toString();
-      }
-      AppState.data.ingresos.unshift(nuevoOrigen);
-    }
-
-    // 2. Incrementar o crear cuenta Destino en AppState.data.ingresos
-    const cuentaDestino = AppState.data.ingresos.find(i => (i.metodo || '').toLowerCase() === destino.toLowerCase());
-    if (cuentaDestino) {
-      const nuevoMontoDestino = parseFloat(cuentaDestino.monto) + valMonto;
-      cuentaDestino.monto = nuevoMontoDestino;
-      if (isSupa) {
-        try {
-          await client.from('ingresos').update({ monto: nuevoMontoDestino }).eq('id', cuentaDestino.id);
-        } catch (e) {
-          console.error('Error actualizando cuenta destino:', e);
-        }
-      }
-    } else {
-      const nuevoDestino = {
-        descripcion: `Plata en ${destino}`,
-        monto: valMonto,
-        metodo: destino,
-        fecha: getTodayString()
-      };
-      if (isSupa) {
-        try {
-          const { data } = await client.from('ingresos').insert([nuevoDestino]).select();
-          if (data && data[0]) nuevoDestino.id = data[0].id;
-        } catch (e) {}
-      } else {
-        nuevoDestino.id = (Date.now() + 1).toString();
-      }
-      AppState.data.ingresos.unshift(nuevoDestino);
-    }
-
-    // 3. Registrar en Historial
     const detalleTraspaso = `Traspaso: ${origen} ➔ ${destino}${nota ? ' • ' + nota.trim() : ''}`;
     await DataService.logHistorial('Traspaso', detalleTraspaso, valMonto, `${origen} ➔ ${destino}`);
 
@@ -437,138 +803,193 @@ const DataService = {
 
   // -------------------------------------------------------------
   // SALDO DE CUENTAS (núcleo del modelo "billetera")
-  // Toda salida o entrada de plata ajusta la cuenta/banco correspondiente.
-  // delta negativo = sale plata, delta positivo = entra plata.
-  // Devuelve true si encontró una cuenta con ese método; false si no
-  // (ej: TDC / Mercado Crédito, que son crédito y no restan de tus bancos).
+  // Respeta siempre CHECK (monto >= 0) en Supabase y reparte descuentos
+  // si hubiera múltiples filas del mismo banco.
   // -------------------------------------------------------------
   async ajustarCuenta(metodo, delta) {
-    const valDelta = parseFloat(delta);
-    if (!metodo || isNaN(valDelta) || valDelta === 0) return false;
+    const valDelta = DataService.parseMonto(delta, true);
+    if (!metodo || valDelta === 0) return { found: false, descontado: 0, faltante: 0 };
     const met = String(metodo).trim().toLowerCase();
 
-    const candidatas = AppState.data.ingresos.filter(i => (i.metodo || '').trim().toLowerCase() === met);
-    if (candidatas.length === 0) return false;
+    // Métodos de crédito puro no descuentan dinero líquido al comprar
+    if (met === 'tdc' || met.includes('tarjeta de cr') || met.includes('mercado cr')) {
+      return { found: false, isCredito: true, descontado: 0, faltante: 0 };
+    }
 
-    // Si hay varias filas del mismo banco, usar la de mayor saldo
-    const cuenta = candidatas.reduce((a, b) => (parseFloat(b.monto) || 0) > (parseFloat(a.monto) || 0) ? b : a);
+    const client = await DataService.ensureClient();
+    const isSupa = Boolean(client && SupabaseConfig.isConfigured());
 
-    const client = SupabaseConfig.client;
-    const isSupa = client && SupabaseConfig.isConfigured();
-    let base = parseFloat(cuenta.monto) || 0;
-
+    // Sincronizar saldos frescos de ingresos desde Supabase antes de ajustar
     if (isSupa) {
-      // Leer el valor fresco del servidor para no pisar cambios hechos desde Google Sheets
       try {
-        const { data } = await client.from('ingresos').select('monto').eq('id', cuenta.id).single();
-        if (data && data.monto !== undefined && data.monto !== null) base = parseFloat(data.monto) || 0;
+        const { data: freshRows, error: freshErr } = await client.from('ingresos').select('*').order('fecha', { ascending: false });
+        if (!freshErr && Array.isArray(freshRows)) {
+          AppState.data.ingresos = freshRows.map(i => ({ ...i, monto: DataService.parseMonto(i.monto) }));
+        }
       } catch (e) {
-        console.warn('No se pudo leer saldo fresco, usando el local:', e);
+        console.warn('No se pudo refrescar ingresos antes de ajustar cuenta:', e);
       }
     }
 
-    const nuevoMonto = Math.round((base + valDelta) * 100) / 100;
-    cuenta.monto = nuevoMonto;
+    const candidatas = (AppState.data.ingresos || [])
+      .filter(i => (i.metodo || '').trim().toLowerCase() === met)
+      .sort((a, b) => DataService.parseMonto(b.monto) - DataService.parseMonto(a.monto));
 
-    if (isSupa) {
-      try {
-        await client.from('ingresos').update({ monto: nuevoMonto }).eq('id', cuenta.id);
-      } catch (e) {
-        console.error('Error actualizando saldo de cuenta:', e);
+    if (candidatas.length === 0) {
+      return { found: false, descontado: 0, faltante: Math.abs(valDelta) };
+    }
+
+    if (valDelta > 0) {
+      const principal = candidatas[0];
+      const nuevoMonto = Math.round((DataService.parseMonto(principal.monto) + valDelta) * 100) / 100;
+      principal.monto = nuevoMonto;
+      if (isSupa) {
+        const { error } = await client.from('ingresos').update({ monto: nuevoMonto }).eq('id', principal.id);
+        if (error) console.error('Error sumando saldo a cuenta:', error);
+      }
+      DataService.saveToLocalStorage();
+      return { found: true, descontado: valDelta, faltante: 0 };
+    }
+
+    // Salida de dinero (valDelta < 0): descontar sin bajar nunca de 0 (evita error CHECK monto >= 0)
+    let porDescontar = Math.abs(valDelta);
+    let totalDescontado = 0;
+
+    for (const cuenta of candidatas) {
+      if (porDescontar <= 0) break;
+      const disponible = Math.max(0, DataService.parseMonto(cuenta.monto));
+      if (disponible <= 0) continue;
+
+      const quitar = Math.min(disponible, porDescontar);
+      const nuevoMonto = Math.max(0, Math.round((disponible - quitar) * 100) / 100);
+      cuenta.monto = nuevoMonto;
+      porDescontar = Math.round((porDescontar - quitar) * 100) / 100;
+      totalDescontado = Math.round((totalDescontado + quitar) * 100) / 100;
+
+      if (isSupa) {
+        const { error } = await client.from('ingresos').update({ monto: nuevoMonto }).eq('id', cuenta.id);
+        if (error) {
+          console.error('Error actualizando saldo de cuenta en Supabase:', error);
+        }
       }
     }
+
     DataService.saveToLocalStorage();
-    return true;
+    return { found: true, descontado: totalDescontado, faltante: porDescontar };
   },
 
   // -------------------------------------------------------------
   // GASTOS DIARIOS
   // -------------------------------------------------------------
   async addGastoDiario(descripcion, monto, metodo, fecha) {
+    const descClean = String(descripcion || '').trim();
     const fechaVal = fecha || getTodayString();
-    const valMonto = parseFloat(monto);
-    if (!descripcion || isNaN(valMonto) || valMonto <= 0) {
-      UI.showNotification('Ingresa una descripción y un monto válido', 'warning');
+    const valMonto = DataService.parseMonto(monto);
+    const metodoClean = DataService.normalizeMetodo(metodo || 'Santander');
+
+    if (!descClean || valMonto <= 0) {
+      UI.showNotification('Ingresa una descripción y un monto válido mayor a 0', 'warning');
       return false;
     }
-    const client = SupabaseConfig.client;
+
+    const client = await DataService.ensureClient();
 
     if (client && SupabaseConfig.isConfigured()) {
       const { data, error } = await client.from('gastos_diarios').insert([{
-        descripcion,
+        descripcion: descClean,
         monto: valMonto,
-        metodo,
+        metodo: metodoClean,
         fecha: fechaVal
       }]).select();
 
       if (error || !data || !data[0]) {
         console.error('Error guardando gasto:', error);
-        UI.showNotification('No se pudo guardar el gasto. Revisa tu conexión.', 'error');
+        UI.showNotification('No se pudo guardar el gasto: ' + (error?.message || 'revisa tu conexión'), 'error');
         return false;
       }
-      AppState.data.diarios.unshift({ ...data[0], monto: parseFloat(data[0].monto) });
+      AppState.data.diarios.unshift({ ...data[0], monto: DataService.parseMonto(data[0].monto) });
     } else {
-      const nuevo = { id: Date.now().toString(), descripcion, monto: valMonto, metodo, fecha: fechaVal };
+      const nuevo = { id: Date.now().toString(), descripcion: descClean, monto: valMonto, metodo: metodoClean, fecha: fechaVal };
       AppState.data.diarios.unshift(nuevo);
-      DataService.saveToLocalStorage();
     }
 
-    // Descontar la plata de la cuenta/banco con que se pagó
-    const descontado = await DataService.ajustarCuenta(metodo, -valMonto);
-
-    await DataService.logHistorial('Gasto Diario', descripcion, valMonto, metodo);
+    const ajuste = await DataService.ajustarCuenta(metodoClean, -valMonto);
+    await DataService.logHistorial('Gasto Diario', descClean, valMonto, metodoClean);
+    DataService.saveToLocalStorage();
     UI.renderAll();
-    if (descontado) {
-      UI.showNotification(`Gasto registrado y descontado de ${metodo}`, 'success');
+
+    if (ajuste.found && ajuste.faltante <= 0) {
+      UI.showNotification(`Gasto de ${UI.formatCurrency(valMonto)} registrado y descontado de ${metodoClean}`, 'success');
+    } else if (ajuste.found && ajuste.faltante > 0) {
+      UI.showNotification(`Gasto guardado. ${metodoClean} quedó en $0 (faltaron ${UI.formatCurrency(ajuste.faltante)} de saldo cargado)`, 'warning');
+    } else if (ajuste.isCredito) {
+      UI.showNotification(`Gasto registrado con ${metodoClean}`, 'success');
     } else {
-      UI.showNotification(`Gasto registrado. "${metodo}" no tiene saldo cargado, no se restó de tus cuentas`, 'info');
+      UI.showNotification(`Gasto guardado. "${metodoClean}" no tiene saldo cargado en Cuentas`, 'info');
     }
     return true;
   },
 
   async deleteGastoDiario(id) {
     const item = AppState.data.diarios.find(d => d.id === id);
-    const client = SupabaseConfig.client;
+    const client = await DataService.ensureClient();
 
     if (client && SupabaseConfig.isConfigured()) {
-      await client.from('gastos_diarios').delete().eq('id', id);
+      const { error } = await client.from('gastos_diarios').delete().eq('id', id);
+      if (error) {
+        UI.showNotification('No se pudo eliminar el gasto: ' + error.message, 'error');
+        return false;
+      }
     }
 
+    DataService.markDeletedId(id);
     AppState.data.diarios = AppState.data.diarios.filter(d => d.id !== id);
     DataService.saveToLocalStorage();
 
     if (item) {
-      // Devolver la plata a la cuenta de donde había salido
-      await DataService.ajustarCuenta(item.metodo, parseFloat(item.monto) || 0);
-      await DataService.logHistorial('Eliminación Gasto', item.descripcion, -item.monto, item.metodo);
+      await DataService.ajustarCuenta(item.metodo, DataService.parseMonto(item.monto));
+      await DataService.logHistorial('Eliminación Gasto', item.descripcion, -DataService.parseMonto(item.monto), item.metodo);
     }
     UI.renderAll();
     UI.showNotification('Gasto eliminado y plata devuelta a la cuenta', 'info');
+    return true;
   },
 
   // -------------------------------------------------------------
   // SERVICIOS / GASTOS FIJOS
   // -------------------------------------------------------------
   async addServicio(servicio, monto, vencimiento) {
-    const client = SupabaseConfig.client;
+    const servClean = String(servicio || '').trim();
+    const valMonto = DataService.parseMonto(monto);
+    const venc = Math.max(1, Math.min(31, parseInt(vencimiento, 10) || 10));
+
+    if (!servClean || valMonto <= 0) {
+      UI.showNotification('Ingresa el nombre del servicio y un monto válido', 'warning');
+      return false;
+    }
+
+    const client = await DataService.ensureClient();
 
     if (client && SupabaseConfig.isConfigured()) {
       const { data, error } = await client.from('gastos_fijos').insert([{
-        servicio,
-        monto: parseFloat(monto),
-        vencimiento: parseInt(vencimiento, 10),
+        servicio: servClean,
+        monto: valMonto,
+        vencimiento: venc,
         estado: 'Pendiente'
       }]).select();
 
-      if (!error && data && data[0]) {
-        AppState.data.servicios.push({ ...data[0], monto: parseFloat(data[0].monto) });
+      if (error || !data || !data[0]) {
+        console.error('Error guardando servicio fijo:', error);
+        UI.showNotification('No se pudo guardar el servicio: ' + (error?.message || 'revisa tu conexión'), 'error');
+        return false;
       }
+      AppState.data.servicios.push({ ...data[0], monto: DataService.parseMonto(data[0].monto) });
     } else {
       const nuevo = {
         id: Date.now().toString(),
-        servicio,
-        monto: parseFloat(monto),
-        vencimiento: parseInt(vencimiento, 10),
+        servicio: servClean,
+        monto: valMonto,
+        vencimiento: venc,
         estado: 'Pendiente'
       };
       AppState.data.servicios.push(nuevo);
@@ -578,84 +999,111 @@ const DataService = {
     AppState.data.servicios.sort((a, b) => a.vencimiento - b.vencimiento);
     UI.renderAll();
     UI.showNotification('Servicio fijo programado', 'success');
+    return true;
   },
 
   async toggleServicio(id, metodo) {
     const serv = AppState.data.servicios.find(s => s.id === id);
-    if (!serv) return;
+    if (!serv) return false;
+
+    const estadoPrevio = serv.estado;
+    const metodoPrevio = serv.metodo_pago;
+    const fechaPrevia = serv.fecha_pago;
 
     const nuevoEstado = serv.estado === 'Pagado' ? 'Pendiente' : 'Pagado';
-    const monto = parseFloat(serv.monto) || 0;
+    const monto = DataService.parseMonto(serv.monto);
 
-    // Banco con que se paga: el indicado, o tu cuenta principal (Santander o la de mayor saldo)
     let metodoPago = metodo && metodo !== 'General' ? metodo : null;
     if (nuevoEstado === 'Pagado' && !metodoPago) {
       const principal = AppState.data.ingresos.find(i => (i.metodo || '').toLowerCase() === 'santander')
-        || [...AppState.data.ingresos].sort((a, b) => (parseFloat(b.monto) || 0) - (parseFloat(a.monto) || 0))[0];
-      metodoPago = principal ? principal.metodo : 'General';
+        || [...AppState.data.ingresos].sort((a, b) => DataService.parseMonto(b.monto) - DataService.parseMonto(a.monto))[0];
+      metodoPago = principal ? principal.metodo : 'Santander';
     }
-    const metodoAnterior = serv.metodo_pago;
 
     serv.estado = nuevoEstado;
     serv.metodo_pago = nuevoEstado === 'Pagado' ? metodoPago : null;
     serv.fecha_pago = nuevoEstado === 'Pagado' ? getTodayString() : null;
 
-    const client = SupabaseConfig.client;
+    const client = await DataService.ensureClient();
     if (client && SupabaseConfig.isConfigured()) {
-      await client.from('gastos_fijos').update({
+      const { error } = await client.from('gastos_fijos').update({
         estado: nuevoEstado,
         fecha_pago: serv.fecha_pago,
         metodo_pago: serv.metodo_pago
       }).eq('id', id);
+
+      if (error) {
+        serv.estado = estadoPrevio;
+        serv.metodo_pago = metodoPrevio;
+        serv.fecha_pago = fechaPrevia;
+        UI.showNotification('Error actualizando servicio: ' + error.message, 'error');
+        return false;
+      }
     }
     DataService.saveToLocalStorage();
 
     if (nuevoEstado === 'Pagado') {
-      const descontado = await DataService.ajustarCuenta(metodoPago, -monto);
+      const ajuste = await DataService.ajustarCuenta(metodoPago, -monto);
       await DataService.logHistorial('Servicio Pagado', serv.servicio, monto, metodoPago);
       UI.showNotification(
-        descontado ? `"${serv.servicio}" pagado y descontado de ${metodoPago}` : `"${serv.servicio}" marcado como Pagado`,
+        ajuste.found ? `"${serv.servicio}" pagado y descontado de ${metodoPago}` : `"${serv.servicio}" marcado como Pagado`,
         'success'
       );
     } else {
-      // Revertir: devolver la plata a la cuenta de donde salió (si era una cuenta con saldo)
-      const devuelto = await DataService.ajustarCuenta(metodoAnterior, monto);
-      if (devuelto) {
-        await DataService.logHistorial('Reverso Servicio', serv.servicio, -monto, metodoAnterior);
+      const ajuste = await DataService.ajustarCuenta(metodoPrevio, monto);
+      if (ajuste.found) {
+        await DataService.logHistorial('Reverso Servicio', serv.servicio, -monto, metodoPrevio);
       }
-      UI.showNotification(`"${serv.servicio}" marcado como Pendiente${devuelto ? ` (se devolvió a ${metodoAnterior})` : ''}`, 'info');
+      UI.showNotification(`"${serv.servicio}" marcado como Pendiente${ajuste.found ? ` (se devolvió a ${metodoPrevio})` : ''}`, 'info');
     }
 
     UI.renderAll();
+    return true;
   },
 
   async deleteServicio(id) {
-    const client = SupabaseConfig.client;
+    const client = await DataService.ensureClient();
     if (client && SupabaseConfig.isConfigured()) {
-      await client.from('gastos_fijos').delete().eq('id', id);
+      const { error } = await client.from('gastos_fijos').delete().eq('id', id);
+      if (error) {
+        UI.showNotification('No se pudo eliminar el servicio: ' + error.message, 'error');
+        return false;
+      }
     }
+    DataService.markDeletedId(id);
     AppState.data.servicios = AppState.data.servicios.filter(s => s.id !== id);
     DataService.saveToLocalStorage();
     UI.renderAll();
     UI.showNotification('Servicio eliminado', 'info');
+    return true;
   },
 
   async updateServicio(id, { servicio, monto, vencimiento }) {
-    const client = SupabaseConfig.client;
-    const m = parseFloat(monto) || 0;
-    const v = parseInt(vencimiento, 10) || 1;
+    const servClean = String(servicio || '').trim();
+    const m = DataService.parseMonto(monto);
+    const v = Math.max(1, Math.min(31, parseInt(vencimiento, 10) || 1));
 
+    if (!servClean || m <= 0) {
+      UI.showNotification('Ingresa un nombre y monto válido', 'warning');
+      return false;
+    }
+
+    const client = await DataService.ensureClient();
     if (client && SupabaseConfig.isConfigured()) {
-      await client.from('gastos_fijos').update({
-        servicio,
+      const { error } = await client.from('gastos_fijos').update({
+        servicio: servClean,
         monto: m,
         vencimiento: v
       }).eq('id', id);
+      if (error) {
+        UI.showNotification('Error actualizando servicio: ' + error.message, 'error');
+        return false;
+      }
     }
 
     const serv = AppState.data.servicios.find(s => s.id === id);
     if (serv) {
-      serv.servicio = servicio;
+      serv.servicio = servClean;
       serv.monto = m;
       serv.vencimiento = v;
     }
@@ -663,12 +1111,14 @@ const DataService = {
     AppState.data.servicios.sort((a, b) => a.vencimiento - b.vencimiento);
     DataService.saveToLocalStorage();
     UI.renderAll();
-    UI.showNotification(`Servicio "${servicio}" actualizado`, 'success');
+    UI.showNotification(`Servicio "${servClean}" actualizado`, 'success');
+    return true;
   },
 
   // Subir comprobante a Supabase Storage
   async uploadVoucher(servicioId, file) {
-    const client = SupabaseConfig.client;
+    if (!file) return;
+    const client = await DataService.ensureClient();
     if (!client || !SupabaseConfig.isConfigured()) {
       UI.showNotification('Conecta Supabase para almacenar comprobantes en la nube.', 'warning');
       return;
@@ -692,7 +1142,6 @@ const DataService = {
 
       const publicUrl = publicUrlData.publicUrl;
 
-      // Actualizar en la base de datos
       await client.from('gastos_fijos').update({
         comprobante_url: publicUrl
       }).eq('id', servicioId);
@@ -704,7 +1153,10 @@ const DataService = {
       UI.showNotification('Comprobante guardado con éxito', 'success');
     } catch (err) {
       console.error('Error al subir voucher:', err);
-      UI.showNotification('Error al subir el comprobante: ' + err.message, 'error');
+      const msg = String(err.message || '').includes('Bucket not found')
+        ? 'Falta crear el bucket público "vouchers" en Supabase Storage'
+        : ('Error al subir el comprobante: ' + err.message);
+      UI.showNotification(msg, 'error');
     }
   },
 
@@ -724,17 +1176,27 @@ const DataService = {
   },
 
   async addDeuda(tipo, nombre, montoTotal, cuotasTotales, metodo, cuotasPagadas) {
-    const total = parseFloat(montoTotal) || 0;
-    const cuotas = parseInt(cuotasTotales, 10) || 1;
-    const pagadas = parseInt(cuotasPagadas, 10) || 0;
-    const montoCuota = total / cuotas;
-    let metodoFinal = metodo || (tipo === 'mercado_credito' ? 'Mercado Crédito' : (tipo === 'tarjeta' ? 'Tarjeta de Crédito' : 'General'));
-    const client = SupabaseConfig.client;
+    const nombreClean = String(nombre || '').trim();
+    const total = DataService.parseMonto(montoTotal);
+    const cuotas = Math.max(1, parseInt(cuotasTotales, 10) || 1);
+    const pagadas = Math.max(0, Math.min(cuotas, parseInt(cuotasPagadas, 10) || 0));
+    const montoCuota = Math.round((total / cuotas) * 100) / 100;
+
+    if (!nombreClean || total <= 0) {
+      UI.showNotification('Ingresa una descripción y un monto total mayor a 0', 'warning');
+      return false;
+    }
+
+    let metodoFinal = metodo || (tipo === 'mercado_credito' ? 'Mercado Crédito' : (tipo === 'tarjeta' ? 'TDC' : 'Santander'));
+    if (tipo === 'mercado_credito') metodoFinal = 'Mercado Crédito';
+
+    const client = await DataService.ensureClient();
 
     if (client && SupabaseConfig.isConfigured()) {
+      const dbTipoInicial = (tipo === 'mercado_credito' && AppState.deudasSupportsMC === false) ? 'prestamo' : tipo;
       let { data, error } = await client.from('deudas').insert([{
-        tipo,
-        nombre,
+        tipo: dbTipoInicial,
+        nombre: nombreClean,
         monto_total: total,
         cuotas_totales: cuotas,
         cuotas_pagadas: pagadas,
@@ -744,48 +1206,45 @@ const DataService = {
       }]).select();
 
       // Respaldo automático si Supabase aún tiene CHECK (tipo IN ('tarjeta', 'prestamo'))
-      if (error && tipo === 'mercado_credito') {
-        console.warn('Reintentando inserción de Mercado Crédito con respaldo tipo=prestamo:', error.message);
-        metodoFinal = 'Mercado Crédito';
+      if (error && tipo === 'mercado_credito' && dbTipoInicial === 'mercado_credito') {
+        AppState.deudasSupportsMC = false;
         const retry = await client.from('deudas').insert([{
           tipo: 'prestamo',
-          nombre,
+          nombre: nombreClean,
           monto_total: total,
           cuotas_totales: cuotas,
           cuotas_pagadas: pagadas,
           monto_cuota: montoCuota,
-          metodo: metodoFinal,
+          metodo: 'Mercado Crédito',
           fecha_inicio: getTodayString()
         }]).select();
         data = retry.data;
         error = retry.error;
       }
 
-      if (error) {
+      if (error || !data || !data[0]) {
         console.error('Error al guardar deuda en Supabase:', error);
-        UI.showNotification('Error al guardar deuda: ' + error.message, 'error');
+        UI.showNotification('Error al guardar deuda: ' + (error?.message || 'revisa tu conexión'), 'error');
         return false;
       }
 
-      if (data && data[0]) {
-        const itemFormateado = {
-          id: data[0].id,
-          compra: data[0].nombre,
-          prestamo: data[0].nombre,
-          monto_total: total,
-          cuotas_totales: cuotas,
-          cuotas_pagadas: pagadas,
-          monto_cuota: montoCuota,
-          fecha_inicio: data[0].fecha_inicio,
-          metodo: data[0].metodo
-        };
-        DataService.getDeudaList(tipo).push(itemFormateado);
-      }
+      const itemFormateado = {
+        id: data[0].id,
+        compra: data[0].nombre,
+        prestamo: data[0].nombre,
+        monto_total: total,
+        cuotas_totales: cuotas,
+        cuotas_pagadas: pagadas,
+        monto_cuota: montoCuota,
+        fecha_inicio: data[0].fecha_inicio,
+        metodo: data[0].metodo
+      };
+      DataService.getDeudaList(tipo).unshift(itemFormateado);
     } else {
       const nuevo = {
         id: Date.now().toString(),
-        compra: nombre,
-        prestamo: nombre,
+        compra: nombreClean,
+        prestamo: nombreClean,
         monto_total: total,
         cuotas_totales: cuotas,
         cuotas_pagadas: pagadas,
@@ -793,28 +1252,37 @@ const DataService = {
         fecha_inicio: getTodayString(),
         metodo: metodoFinal
       };
-      DataService.getDeudaList(tipo).push(nuevo);
+      DataService.getDeudaList(tipo).unshift(nuevo);
     }
 
     DataService.saveToLocalStorage();
     UI.renderAll();
-    UI.showNotification(`${DataService.getDeudaTipoLabel(tipo)} agregado`, 'success');
+    UI.showNotification(`${DataService.getDeudaTipoLabel(tipo)} registrado correctamente`, 'success');
     return true;
   },
 
   async updateDeuda(id, tipoOriginal, { tipo, nombre, monto_total, cuotas_totales, cuotas_pagadas, monto_cuota, metodo }) {
     const nuevoTipo = tipo || tipoOriginal;
-    const total = parseFloat(monto_total) || 0;
-    const cuotasTot = parseInt(cuotas_totales, 10) || 1;
-    const cuotasPag = parseInt(cuotas_pagadas, 10) || 0;
-    const valorCuota = monto_cuota ? parseFloat(monto_cuota) : (total / cuotasTot);
-    let metodoFinal = metodo || (nuevoTipo === 'mercado_credito' ? 'Mercado Crédito' : (nuevoTipo === 'tarjeta' ? 'Tarjeta de Crédito' : 'General'));
+    const nombreClean = String(nombre || '').trim();
+    const total = DataService.parseMonto(monto_total);
+    const cuotasTot = Math.max(1, parseInt(cuotas_totales, 10) || 1);
+    const cuotasPag = Math.max(0, Math.min(cuotasTot, parseInt(cuotas_pagadas, 10) || 0));
+    const parsedCuota = DataService.parseMonto(monto_cuota);
+    const valorCuota = parsedCuota > 0 ? parsedCuota : Math.round((total / cuotasTot) * 100) / 100;
+    let metodoFinal = metodo || (nuevoTipo === 'mercado_credito' ? 'Mercado Crédito' : (nuevoTipo === 'tarjeta' ? 'TDC' : 'Santander'));
+    if (nuevoTipo === 'mercado_credito') metodoFinal = 'Mercado Crédito';
 
-    const client = SupabaseConfig.client;
+    if (!nombreClean || total <= 0) {
+      UI.showNotification('Ingresa un nombre y monto válido', 'warning');
+      return false;
+    }
+
+    const client = await DataService.ensureClient();
     if (client && SupabaseConfig.isConfigured()) {
+      const dbTipoInicial = (nuevoTipo === 'mercado_credito' && AppState.deudasSupportsMC === false) ? 'prestamo' : nuevoTipo;
       let { error } = await client.from('deudas').update({
-        tipo: nuevoTipo,
-        nombre,
+        tipo: dbTipoInicial,
+        nombre: nombreClean,
         monto_total: total,
         cuotas_totales: cuotasTot,
         cuotas_pagadas: cuotasPag,
@@ -822,17 +1290,16 @@ const DataService = {
         metodo: metodoFinal
       }).eq('id', id);
 
-      if (error && nuevoTipo === 'mercado_credito') {
-        console.warn('Reintentando actualización de Mercado Crédito con respaldo tipo=prestamo:', error.message);
-        metodoFinal = 'Mercado Crédito';
+      if (error && nuevoTipo === 'mercado_credito' && dbTipoInicial === 'mercado_credito') {
+        AppState.deudasSupportsMC = false;
         const retry = await client.from('deudas').update({
           tipo: 'prestamo',
-          nombre,
+          nombre: nombreClean,
           monto_total: total,
           cuotas_totales: cuotasTot,
           cuotas_pagadas: cuotasPag,
           monto_cuota: valorCuota,
-          metodo: metodoFinal
+          metodo: 'Mercado Crédito'
         }).eq('id', id);
         error = retry.error;
       }
@@ -848,8 +1315,8 @@ const DataService = {
     const idx = listaOriginal.findIndex(d => d.id === id);
     if (idx !== -1) {
       const item = listaOriginal[idx];
-      item.compra = nombre;
-      item.prestamo = nombre;
+      item.compra = nombreClean;
+      item.prestamo = nombreClean;
       item.monto_total = total;
       item.cuotas_totales = cuotasTot;
       item.cuotas_pagadas = cuotasPag;
@@ -858,12 +1325,12 @@ const DataService = {
 
       if (nuevoTipo !== tipoOriginal) {
         listaOriginal.splice(idx, 1);
-        DataService.getDeudaList(nuevoTipo).push(item);
+        DataService.getDeudaList(nuevoTipo).unshift(item);
       }
     }
 
     DataService.saveToLocalStorage();
-    await DataService.logHistorial('Actualización Deuda', `Actualizado ${nombre} (${cuotasPag}/${cuotasTot} cuotas)`, total, metodoFinal);
+    await DataService.logHistorial('Actualización Deuda', `Actualizado ${nombreClean} (${cuotasPag}/${cuotasTot} cuotas)`, total, metodoFinal);
     UI.renderAll();
     UI.showNotification('Deuda actualizada correctamente', 'success');
     return true;
@@ -872,58 +1339,61 @@ const DataService = {
   async pagarCuotaDeuda(id, tipo, montoAbonado, metodoDebitado) {
     const lista = DataService.getDeudaList(tipo);
     const item = lista.find(d => d.id === id);
-    if (!item) return false;
+    if (!item || item.cuotas_pagadas >= item.cuotas_totales) return false;
 
-    if (item.cuotas_pagadas < item.cuotas_totales) {
-      const valMonto = (montoAbonado !== undefined && montoAbonado !== null && !isNaN(parseFloat(montoAbonado)))
-        ? parseFloat(montoAbonado)
-        : parseFloat(item.monto_cuota || 0);
+    const parsedAbono = DataService.parseMonto(montoAbonado);
+    const valMonto = parsedAbono > 0 ? parsedAbono : DataService.parseMonto(item.monto_cuota);
+    const bancoDebito = DataService.normalizeMetodo(metodoDebitado || item.metodo || 'Santander');
+    const nuevasPagadas = (parseInt(item.cuotas_pagadas, 10) || 0) + 1;
 
-      const bancoDebito = metodoDebitado || item.metodo || 'Santander';
-
-      item.cuotas_pagadas += 1;
-
-      const client = SupabaseConfig.client;
-      const isSupa = client && SupabaseConfig.isConfigured();
-
-      if (isSupa) {
-        try {
-          await client.from('deudas').update({
-            cuotas_pagadas: item.cuotas_pagadas
-          }).eq('id', id);
-        } catch (e) {
-          console.error('Error actualizando cuotas en deudas:', e);
-        }
+    const client = await DataService.ensureClient();
+    if (client && SupabaseConfig.isConfigured()) {
+      const { error } = await client.from('deudas').update({
+        cuotas_pagadas: nuevasPagadas
+      }).eq('id', id);
+      if (error) {
+        console.error('Error actualizando cuotas en deudas:', error);
+        UI.showNotification('No se pudo registrar el pago de cuota: ' + error.message, 'error');
+        return false;
       }
-
-      // 1. Descontar la cuota de la cuenta/banco con que se pagó
-      if (valMonto > 0 && bancoDebito) {
-        await DataService.ajustarCuenta(bancoDebito, -valMonto);
-      }
-
-      DataService.saveToLocalStorage();
-
-      const nombre = item.compra || item.prestamo;
-      const tipoCategoria = tipo === 'mercado_credito' ? 'Mercado Crédito' : tipo;
-      await DataService.logHistorial(
-        `Cuota ${tipoCategoria}`,
-        `Pago cuota ${item.cuotas_pagadas}/${item.cuotas_totales} de ${nombre}`,
-        valMonto,
-        bancoDebito
-      );
-
-      UI.renderAll();
-      UI.showNotification(`Cuota ${item.cuotas_pagadas}/${item.cuotas_totales} abonada (${UI.formatCurrency(valMonto)} de ${bancoDebito})`, 'success');
-      return true;
     }
-    return false;
+
+    item.cuotas_pagadas = nuevasPagadas;
+
+    if (valMonto > 0 && bancoDebito) {
+      await DataService.ajustarCuenta(bancoDebito, -valMonto);
+    }
+
+    DataService.saveToLocalStorage();
+
+    const nombre = item.compra || item.prestamo;
+    const tipoCategoria = tipo === 'mercado_credito' ? 'Mercado Crédito' : tipo;
+    await DataService.logHistorial(
+      `Cuota ${tipoCategoria}`,
+      `Pago cuota ${item.cuotas_pagadas}/${item.cuotas_totales} de ${nombre}`,
+      valMonto,
+      bancoDebito
+    );
+
+    UI.renderAll();
+    UI.showNotification(`Cuota ${item.cuotas_pagadas}/${item.cuotas_totales} abonada (${UI.formatCurrency(valMonto)} de ${bancoDebito})`, 'success');
+    return true;
   },
 
   async deleteDeuda(id, tipo) {
-    const client = SupabaseConfig.client;
+    const lista = DataService.getDeudaList(tipo);
+    const item = lista.find(d => d.id === id);
+    const client = await DataService.ensureClient();
+
     if (client && SupabaseConfig.isConfigured()) {
-      await client.from('deudas').delete().eq('id', id);
+      const { error } = await client.from('deudas').delete().eq('id', id);
+      if (error) {
+        UI.showNotification('No se pudo eliminar la deuda: ' + error.message, 'error');
+        return false;
+      }
     }
+
+    DataService.markDeletedId(id);
     if (tipo === 'tarjeta') {
       AppState.data.tarjetas = AppState.data.tarjetas.filter(d => d.id !== id);
     } else if (tipo === 'mercado_credito') {
@@ -932,49 +1402,61 @@ const DataService = {
       AppState.data.prestamos = AppState.data.prestamos.filter(d => d.id !== id);
     }
     DataService.saveToLocalStorage();
+    if (item) {
+      await DataService.logHistorial('Eliminación Deuda', item.compra || item.prestamo, -DataService.parseMonto(item.monto_total), item.metodo);
+    }
     UI.renderAll();
-    UI.showNotification('Registro eliminado', 'info');
+    UI.showNotification('Deuda eliminada', 'info');
+    return true;
   },
 
   // -------------------------------------------------------------
   // MÉTODOS DE PAGO
   // -------------------------------------------------------------
   async addMetodo(nombre) {
-    if (!nombre || AppState.data.metodos.includes(nombre)) return;
-    AppState.data.metodos.push(nombre);
+    const clean = String(nombre || '').trim();
+    if (!clean || AppState.data.metodos.includes(clean)) return false;
 
-    const client = SupabaseConfig.client;
+    const client = await DataService.ensureClient();
     if (client && SupabaseConfig.isConfigured()) {
-      await client.from('metodos_pago').insert([{ nombre }]);
-    } else {
-      DataService.saveToLocalStorage();
+      const { error } = await client.from('metodos_pago').insert([{ nombre: clean }]);
+      if (error) {
+        UI.showNotification('No se pudo guardar el método: ' + error.message, 'error');
+        return false;
+      }
     }
+    AppState.data.metodos.push(clean);
+    DataService.saveToLocalStorage();
     UI.renderAll();
-    UI.showNotification(`Método "${nombre}" añadido`, 'success');
+    UI.showNotification(`Método "${clean}" añadido`, 'success');
+    return true;
   },
 
   async deleteMetodo(nombre) {
-    AppState.data.metodos = AppState.data.metodos.filter(m => m !== nombre);
-    const client = SupabaseConfig.client;
+    const client = await DataService.ensureClient();
     if (client && SupabaseConfig.isConfigured()) {
-      await client.from('metodos_pago').delete().eq('nombre', nombre);
-    } else {
-      DataService.saveToLocalStorage();
+      const { error } = await client.from('metodos_pago').delete().eq('nombre', nombre);
+      if (error) {
+        UI.showNotification('No se pudo eliminar el método: ' + error.message, 'error');
+        return false;
+      }
     }
+    AppState.data.metodos = AppState.data.metodos.filter(m => m !== nombre);
+    DataService.saveToLocalStorage();
     UI.renderAll();
     UI.showNotification(`Método "${nombre}" eliminado`, 'info');
+    return true;
   },
 
   // -------------------------------------------------------------
   // RECONCILIACIÓN INTELIGENTE DE SALDO / AJUSTE DE CAPITAL
   // -------------------------------------------------------------
   async reconciliarSaldo(saldoObjetivo, marcarServicios, listaExcluidos, metodo, motivo) {
-    const objetivo = parseFloat(saldoObjetivo);
-    if (isNaN(objetivo)) return;
-    const metodoFinal = metodo || 'General';
+    const objetivo = DataService.parseMonto(saldoObjetivo);
+    if (isNaN(objetivo) || objetivo < 0) return false;
+    const metodoFinal = DataService.normalizeMetodo(metodo || 'Santander');
     const motivoFinal = motivo || 'Ajuste de Capital (Reconciliación)';
 
-    // 1. Marcar servicios como pagados si se solicitó
     if (marcarServicios) {
       const excluidosNorm = (listaExcluidos || []).map(e => String(e).toLowerCase().trim());
       for (const serv of AppState.data.servicios) {
@@ -986,9 +1468,8 @@ const DataService = {
       }
     }
 
-    // 2. Calcular diferencia de saldo actual vs objetivo y ajustar la cuenta bancaria correspondiente
     const metrics = Calculations.getMetrics();
-    const diferencia = objetivo - metrics.saldoReal;
+    const diferencia = Math.round((objetivo - metrics.saldoReal) * 100) / 100;
 
     if (Math.abs(diferencia) >= 0.01) {
       const cuenta = AppState.data.ingresos.find(i => (i.metodo || '').toLowerCase() === metodoFinal.toLowerCase())
@@ -996,31 +1477,36 @@ const DataService = {
         || AppState.data.ingresos[0];
 
       if (cuenta) {
-        cuenta.monto = Math.max(0, parseFloat(cuenta.monto || 0) + diferencia);
-        const client = SupabaseConfig.client;
+        const nuevoMonto = Math.max(0, Math.round((DataService.parseMonto(cuenta.monto) + diferencia) * 100) / 100);
+        const client = await DataService.ensureClient();
         if (client && SupabaseConfig.isConfigured()) {
-          try {
-            await client.from('ingresos').update({ monto: cuenta.monto }).eq('id', cuenta.id);
-          } catch (e) {
-            console.error('Error actualizando cuenta en reconciliación:', e);
+          const { error } = await client.from('ingresos').update({ monto: nuevoMonto }).eq('id', cuenta.id);
+          if (error) {
+            UI.showNotification('Error al ajustar saldo en Supabase: ' + error.message, 'error');
+            return false;
           }
         }
+        cuenta.monto = nuevoMonto;
+        await DataService.logHistorial('Ajuste Capital', motivoFinal, diferencia, cuenta.metodo || metodoFinal);
       } else {
         await DataService.addIngreso(motivoFinal, Math.max(0, objetivo), metodoFinal);
       }
     }
 
-    UI.showNotification(`Capital actualizado a $${Math.round(objetivo).toLocaleString('es-AR')}`, 'success');
+    DataService.saveToLocalStorage();
+    UI.showNotification(`Capital actualizado a ${UI.formatCurrency(objetivo)}`, 'success');
     UI.renderAll();
+    return true;
   },
 
   // -------------------------------------------------------------
   // INVERSIONES (Supabase opcional + respaldo localStorage)
   // -------------------------------------------------------------
   async addInversion({ nombre, tipo, plataforma, monto_invertido, valor_actual, moneda, notas }) {
-    const invertido = parseFloat(monto_invertido) || 0;
-    const actual = parseFloat(valor_actual) || invertido;
-    if (!nombre || invertido < 0) {
+    const invertido = DataService.parseMonto(monto_invertido);
+    const actualRaw = DataService.parseMonto(valor_actual);
+    const actual = actualRaw > 0 ? actualRaw : invertido;
+    if (!nombre || invertido <= 0) {
       UI.showNotification('Ingresa un nombre y monto válido para la inversión', 'warning');
       return false;
     }
@@ -1039,21 +1525,25 @@ const DataService = {
     };
 
     let inserted = { id: 'inv-' + Date.now(), ...payload };
-    const client = SupabaseConfig.client;
+    const client = await DataService.ensureClient();
 
-    if (client && SupabaseConfig.isConfigured()) {
+    if (client && SupabaseConfig.isConfigured() && AppState.hasInversionesTable !== false) {
       try {
         const { data, error } = await client.from('inversiones').insert([payload]).select();
-        if (!error && data && data[0]) {
+        if (error) {
+          if (error.code === 'PGRST205' || String(error.message || '').includes('inversiones')) {
+            AppState.hasInversionesTable = false;
+          }
+        } else if (data && data[0]) {
           inserted = {
             ...data[0],
-            monto_invertido: parseFloat(data[0].monto_invertido) || 0,
-            valor_actual: parseFloat(data[0].valor_actual) || 0,
-            rendimiento_pct: parseFloat(data[0].rendimiento_pct) || 0
+            monto_invertido: DataService.parseMonto(data[0].monto_invertido),
+            valor_actual: DataService.parseMonto(data[0].valor_actual),
+            rendimiento_pct: DataService.parseMonto(data[0].rendimiento_pct, true)
           };
         }
       } catch (e) {
-        console.info('Guardando inversión en almacenamiento local hasta crear tabla en Supabase.');
+        AppState.hasInversionesTable = false;
       }
     }
 
@@ -1069,8 +1559,8 @@ const DataService = {
   },
 
   async deleteInversion(id) {
-    const client = SupabaseConfig.client;
-    if (client && SupabaseConfig.isConfigured()) {
+    const client = await DataService.ensureClient();
+    if (client && SupabaseConfig.isConfigured() && AppState.hasInversionesTable !== false) {
       try {
         await client.from('inversiones').delete().eq('id', id);
       } catch (e) {}
@@ -1081,6 +1571,7 @@ const DataService = {
     DataService.saveToLocalStorage();
     UI.renderAll();
     UI.showNotification('Inversión eliminada', 'info');
+    return true;
   }
 };
 
@@ -1200,19 +1691,32 @@ const Calculations = {
       }
     });
 
-    const isCuotaPagadaEsteMes = (nombreItem) => {
-      const nombre = (nombreItem || '').toLowerCase().trim();
-      return (AppState.data.historial || []).some(h =>
-        (h.categoria || '').toLowerCase().includes('cuota') &&
-        Calculations.isCurrentMonth(h.fecha) &&
-        (h.descripcion || '').toLowerCase().includes(nombre)
-      );
+    const isCuotaPagadaEsteMes = (item) => {
+      const pagadas = parseInt(item.cuotas_pagadas, 10) || 0;
+      const totales = parseInt(item.cuotas_totales, 10) || 1;
+      if (pagadas <= 0) return false;
+
+      const nombre = (item.compra || item.prestamo || '').toLowerCase().trim();
+      if (!nombre) return false;
+      const fraseExacta = `pago cuota ${pagadas}/${totales} de ${nombre}`;
+      const cuotaItem = Math.round(DataService.parseMonto(item.monto_cuota));
+
+      return (AppState.data.historial || []).some(h => {
+        if (!(h.categoria || '').toLowerCase().includes('cuota')) return false;
+        if (!Calculations.isCurrentMonth(h.fecha_iso || h.fecha)) return false;
+        const desc = (h.descripcion || '').toLowerCase().trim();
+        if (desc === fraseExacta || desc.startsWith(fraseExacta)) {
+          const montoHist = Math.round(Math.abs(DataService.parseMonto(h.monto, true)));
+          return cuotaItem === 0 || Math.abs(montoHist - cuotaItem) <= Math.max(500, cuotaItem * 0.2);
+        }
+        return false;
+      });
     };
 
     let cuotasTarjetas = 0;
     (AppState.data.tarjetas || []).forEach(t => {
       if ((t.cuotas_pagadas || 0) >= t.cuotas_totales) return;
-      if (isCuotaPagadaEsteMes(t.compra)) return;
+      if (isCuotaPagadaEsteMes(t)) return;
       const cuota = parseFloat(t.monto_cuota) || 0;
       cuotasTarjetas += cuota;
       compromisosPendientes.push({
@@ -1230,7 +1734,7 @@ const Calculations = {
     let cuotasMercadoCredito = 0;
     (AppState.data.mercadoCredito || []).forEach(mc => {
       if ((mc.cuotas_pagadas || 0) >= mc.cuotas_totales) return;
-      if (isCuotaPagadaEsteMes(mc.compra || mc.prestamo)) return;
+      if (isCuotaPagadaEsteMes(mc)) return;
       const cuota = parseFloat(mc.monto_cuota) || 0;
       cuotasMercadoCredito += cuota;
       compromisosPendientes.push({
@@ -1248,7 +1752,7 @@ const Calculations = {
     let cuotasPrestamos = 0;
     (AppState.data.prestamos || []).forEach(p => {
       if ((p.cuotas_pagadas || 0) >= p.cuotas_totales) return;
-      if (isCuotaPagadaEsteMes(p.prestamo)) return;
+      if (isCuotaPagadaEsteMes(p)) return;
       const cuota = parseFloat(p.monto_cuota) || 0;
       cuotasPrestamos += cuota;
       compromisosPendientes.push({
@@ -1419,13 +1923,13 @@ const UI = {
   updateSheetsSyncBadge() {
     const badge = document.getElementById('sheets-sync-badge');
     if (!badge) return;
-    const syncUrl = typeof SupabaseConfig.getSheetsSyncUrl === 'function' ? SupabaseConfig.getSheetsSyncUrl() : '';
-    if (syncUrl) {
+    const sheetId = typeof SupabaseConfig.getGoogleSheetId === 'function' ? SupabaseConfig.getGoogleSheetId() : '';
+    if (sheetId) {
       badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
-      badge.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> Sheets + Supabase';
+      badge.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> Sheets + Supabase Activo';
     } else {
       badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-500/10 text-amber-300 border border-amber-500/20';
-      badge.innerHTML = '<span class="w-2 h-2 rounded-full bg-amber-400"></span> Falta URL de Sheets';
+      badge.innerHTML = '<span class="w-2 h-2 rounded-full bg-amber-400"></span> Solo Supabase';
     }
   },
 
